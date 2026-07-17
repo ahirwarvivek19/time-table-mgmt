@@ -1,0 +1,7 @@
+node_modules/**
+gen.js
+package.json
+package-lock.json
+scratch/**
+*.xlsx
+.vscode/**

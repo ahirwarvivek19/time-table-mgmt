@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Clasp credentials (contains Google API tokens - keep private!)
+.clasp.json
+
+# Scratch/temp files
+scratch/
+
+# OS files
+.DS_Store
+Thumbs.db
