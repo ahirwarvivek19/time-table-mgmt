@@ -85,16 +85,26 @@ const TeacherViewManager = {
       periods.forEach(p => lookup[d][p] = null);
     });
 
-    scheduleData
-      .filter(r => r.Teacher === teacherName)
-      .forEach(row => {
-        if (row.Day && row.Period && lookup[row.Day] !== undefined) {
-          lookup[row.Day][parseInt(row.Period)] = {
-            cls:     row.Class   || '',
-            subject: row.Subject || ''
-          };
+    scheduleData.forEach(row => {
+      if (row.Day && row.Period && lookup[row.Day] !== undefined) {
+        if (ScheduleParser.rowIncludesTeacher(row, teacherName)) {
+          const specificSubject = ScheduleParser.getSubjectForTeacher(row, teacherName);
+          const periodInt = parseInt(row.Period);
+          const existingSlot = lookup[row.Day][periodInt];
+          const entryText = (row.Class || '') + '\n' + (specificSubject || row.Subject || '');
+          
+          if (!existingSlot) {
+            lookup[row.Day][periodInt] = {
+              cls: row.Class || '',
+              subject: specificSubject || row.Subject || '',
+              text: entryText
+            };
+          } else {
+            lookup[row.Day][periodInt].text += '\n---\n' + entryText;
+          }
         }
-      });
+      }
+    });
 
     // ── 4. BUILD GRID DATA ────────────────────────────────────────────────
     const headers = ['Day / Period', 'Period 1', 'Period 2', 'Period 3',
@@ -105,7 +115,7 @@ const TeacherViewManager = {
       const row = [day];
       periods.forEach(period => {
         const slot = lookup[day][period];
-        row.push(slot && slot.cls ? slot.cls + '\n' + slot.subject : 'FREE');
+        row.push(slot && slot.text ? slot.text : 'FREE');
       });
       gridOutput.push(row);
     });

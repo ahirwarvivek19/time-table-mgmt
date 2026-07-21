@@ -12,6 +12,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Initialize / Refresh Class View', 'initClassView')
     .addItem('Initialize / Refresh Teacher View', 'initTeacherView')
+    .addItem('Initialize / Refresh Day-wise Teacher View', 'initTeacherDayView')
     .addSeparator()
     .addItem('View Teacher Free Slots', 'generateTeacherAvailabilityGrid')
     .addItem('Launch Cover Manager UI', 'openCoverManagerUI')
@@ -50,6 +51,14 @@ function initTeacherView() {
 }
 
 /**
+ * Initializes or Refreshes the Day-wise Teacher Schedule View for Monday.
+ */
+function initTeacherDayView() {
+  TeacherDayViewManager.renderTeacherDayView('Monday');
+  SpreadsheetApp.getUi().alert('Day-wise Teacher View initialized successfully!');
+}
+
+/**
  * Applies global frontend styling to every single tab in the spreadsheet.
  * Uses batch setBackgrounds() calls instead of per-row loops to stay within
  * Apps Script quota limits.
@@ -59,7 +68,7 @@ function styleEntireSheet() {
   const sheets = ss.getSheets();
 
   // Sheets that have their own custom styling — skip alternating rows for these
-  const skipBanding = ['Master_Grid_View', 'Class_View', 'Teacher_Availability_Grid'];
+  const skipBanding = ['Master_Grid_View', 'Class_View', 'Teacher_View', 'Teacher_Day_View', 'Teacher_Availability_Grid'];
 
   sheets.forEach(sheet => {
     sheet.setHiddenGridlines(true);
@@ -127,7 +136,11 @@ function setupInitialSpreadsheet() {
     },
     {
       name: 'Teacher_View',
-      headers: []   // reserved for future Teacher View
+      headers: []   // rendered programmatically by TeacherViewManager
+    },
+    {
+      name: 'Teacher_Day_View',
+      headers: []   // rendered programmatically by TeacherDayViewManager
     },
     {
       name: 'Cover_Manager',
@@ -166,6 +179,7 @@ function setupInitialSpreadsheet() {
   if (teachersData.length > 0 && teachersData[0]['Teacher Name']) {
     TeacherViewManager.renderTeacherView(teachersData[0]['Teacher Name']);
   }
+  TeacherDayViewManager.renderTeacherDayView('Monday');
 
   SpreadsheetApp.getUi().alert(
     'Setup Complete!\n' +
@@ -270,7 +284,7 @@ function reorderSheets_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const desiredOrder = [
     'Teachers', 'Subjects', 'Classes', 'Rooms',
-    'Master_Schedule', 'Master_Grid_View', 'Class_View', 'Teacher_View', 'Cover_Manager',
+    'Master_Schedule', 'Master_Grid_View', 'Class_View', 'Teacher_View', 'Teacher_Day_View', 'Cover_Manager',
     'Teacher_Availability_Grid'
   ];
   desiredOrder.forEach((name, idx) => {

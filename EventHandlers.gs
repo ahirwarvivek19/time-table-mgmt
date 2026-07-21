@@ -17,6 +17,8 @@ function onEdit(e) {
     handleClassViewEdit(e);
   } else if (sheetName === 'Teacher_View') {
     handleTeacherViewEdit(e);
+  } else if (sheetName === 'Teacher_Day_View') {
+    handleTeacherDayViewEdit(e);
   } else if (sheetName === 'Master_Schedule') {
     handleMasterScheduleEdit(e);
   }
@@ -76,6 +78,20 @@ function handleTeacherViewEdit(e) {
 }
 
 // ─────────────────────────────────────────────────────────
+// TEACHER DAY VIEW
+// ─────────────────────────────────────────────────────────
+
+function handleTeacherDayViewEdit(e) {
+  const range = e.range;
+
+  // B3 dropdown → re-render for new day
+  if (range.getRow() === 3 && range.getColumn() === 2) {
+    const day = range.getValue();
+    if (day) TeacherDayViewManager.renderTeacherDayView(day);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
 // MASTER SCHEDULE → cascade refresh
 // ─────────────────────────────────────────────────────────
 
@@ -108,6 +124,13 @@ function handleMasterScheduleEdit(e) {
     }
   }
 
-  // 3. Refresh Master_Grid_View data (lightweight — no re-styling)
+  // 3. Refresh Teacher_Day_View if active
+  const teacherDayViewSheet = sheet.getSheetByName('Teacher_Day_View');
+  if (teacherDayViewSheet) {
+    const activeDay = teacherDayViewSheet.getRange('B3').getValue() || 'Monday';
+    TeacherDayViewManager.renderTeacherDayView(activeDay);
+  }
+
+  // 4. Refresh Master_Grid_View data (lightweight — no re-styling)
   refreshMasterGridData_();
 }

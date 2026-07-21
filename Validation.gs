@@ -47,20 +47,23 @@ function runValidation() {
       tracking[timeKey] = { teachers: {}, rooms: {} };
     }
 
-    if (teacher) {
-      if (tracking[timeKey].teachers[teacher]) {
+    const rowObj = { Teacher: teacher, Subject: values[i][4] };
+    const assignments = ScheduleParser.parseRowAssignments(rowObj);
+    const teacherList = [...new Set(assignments.map(a => a.teacher).filter(Boolean))];
+
+    teacherList.forEach(t => {
+      if (tracking[timeKey].teachers[t]) {
         clash = true;
-        clashMsg.push('Teacher Clash');
+        clashMsg.push(`Teacher Clash (${t})`);
       } else {
-        tracking[timeKey].teachers[teacher] = true;
+        tracking[timeKey].teachers[t] = values[i][2];
       }
 
-      // Check Days Unavailable constraint
-      if (unavailableMap[teacher] && unavailableMap[teacher].includes(day)) {
+      if (unavailableMap[t] && unavailableMap[t].includes(day)) {
         clash = true;
-        clashMsg.push('Unavailable Day');
+        clashMsg.push(`Unavailable Day (${t})`);
       }
-    }
+    });
 
     if (room) {
       if (tracking[timeKey].rooms[room]) {

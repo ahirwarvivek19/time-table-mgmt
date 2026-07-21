@@ -24,8 +24,8 @@ function apiGetTeachers() {
  */
 function apiGetTeacherSchedule(teacherName, day) {
   const scheduleData = DataAccess.getSheetDataAsObjects('Master_Schedule');
-  return scheduleData.filter(row => row.Teacher === teacherName && row.Day === day)
-                     .sort((a, b) => a.Period - b.Period);
+  return scheduleData.filter(row => row.Day === day && ScheduleParser.rowIncludesTeacher(row, teacherName))
+                     .sort((a, b) => parseInt(a.Period) - parseInt(b.Period));
 }
 
 /**
@@ -39,7 +39,10 @@ function apiGetAvailableTeachers(day, period) {
   const busyTeachers = new Set();
   scheduleData.forEach(row => {
     if (row.Day === day && parseInt(row.Period) === parseInt(period)) {
-      if (row.Teacher) busyTeachers.add(row.Teacher);
+      const assignments = ScheduleParser.parseRowAssignments(row);
+      assignments.forEach(assign => {
+        if (assign.teacher) busyTeachers.add(assign.teacher);
+      });
     }
   });
   

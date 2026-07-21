@@ -46,9 +46,14 @@ function generateTeacherAvailabilityGrid() {
   });
   
   scheduleData.forEach(row => {
-    if (row.Teacher && lookup[row.Teacher]) {
-      lookup[row.Teacher][row.Period] = `BUSY (${row.Class})`;
-    }
+    if (!row.Period) return;
+    const p = parseInt(row.Period);
+    const assignments = ScheduleParser.parseRowAssignments(row);
+    assignments.forEach(assign => {
+      if (assign.teacher && lookup[assign.teacher] && lookup[assign.teacher][p]) {
+        lookup[assign.teacher][p] = `BUSY (${row.Class})`;
+      }
+    });
   });
 
   // 3. Build Output Array
