@@ -1,15 +1,13 @@
 /**
  * ClassViewManager.gs
  * Handles the 2D editable Class View grid with premium styling.
- * - Subject dropdowns sourced from the Subjects sheet (falls back to Master_Schedule)
- * - Teacher dropdowns sourced from the Teachers sheet
- * - Two rows per day: Subject row (editable) + Teacher row (editable)
+ * Supports multi-class / combined class selection (e.g. 11th A, 11th B) and optional subjects.
  */
 
 const ClassViewManager = {
 
   /**
-   * Renders the full 2D timetable grid for a specific class.
+   * Renders the full 2D timetable grid for a specific class (or combined classes).
    * @param {string} className
    */
   renderClassView: function(className) {
@@ -30,12 +28,10 @@ const ClassViewManager = {
 
     // ── 1. CLASS SELECTOR (Row 3) ──────────────────────────────────────────
     const classesData = DataAccess.getSheetDataAsObjects('Classes');
-    const classNames  = classesData.map(c => c['Class Name']).filter(c => c);
+    const classNames  = classesData.map(c => c['Class Name']).filter(c => c).sort();
 
-    if (className && classNames.includes(className)) {
-      // keep as-is
-    } else {
-      className = classNames[0] || '';
+    if (!className && classNames.length > 0) {
+      className = classNames[0];
     }
 
     sheet.getRange('A3')
@@ -48,7 +44,10 @@ const ClassViewManager = {
     const classCell = sheet.getRange('B3');
     if (classNames.length > 0) {
       classCell.setDataValidation(
-        SpreadsheetApp.newDataValidation().requireValueInList(classNames, true).build()
+        SpreadsheetApp.newDataValidation()
+          .requireValueInList(classNames, true)
+          .setAllowInvalid(true) // Allows combined class entries e.g. "11th A, 11th B"
+          .build()
       );
     }
     classCell.setValue(className);
@@ -58,8 +57,6 @@ const ClassViewManager = {
     sheet.setRowHeight(3, 36);
 
     // ── 2. TITLE BANNER (Rows 1–2) ────────────────────────────────────────
-    // Col 1 stays unmerged so setFrozenColumns(1) works without conflict.
-    // Cols 2–9 are merged for the title text.
     sheet.getRange(1, 1, 2, numCols)
          .setBackground('#1A252F')
          .setFontFamily('Montserrat');
@@ -81,28 +78,40 @@ const ClassViewManager = {
 
     // ── 3. FETCH SCHEDULE DATA ────────────────────────────────────────────
     const scheduleData = DataAccess.getSheetDataAsObjects('Master_Schedule');
-    const classSchedule = scheduleData.filter(r => r.Class === className);
+    // Filter matching rows using multi-class matching
+    const classSchedule = scheduleData.filter(r => ScheduleParser.rowIncludesClass(r, className));
 
     const lookup = {};
     days.forEach(d => {
       lookup[d] = {};
       periods.forEach(p => lookup[d][p] = { subject: '', teacher: '' });
     });
+
     classSchedule.forEach(row => {
       if (row.Day && row.Period && lookup[row.Day]) {
-        lookup[row.Day][parseInt(row.Period)] = {
-          subject: row.Subject || '',
-          teacher: row.Teacher || ''
-        };
+        const p = parseInt(row.Period);
+        if (isNaN(p) || p < 1 || p > 8) return;
+
+        const current = lookup[row.Day][p];
+        if (!current.subject) {
+          current.subject = row.Subject || '';
+          current.teacher = row.Teacher || '';
+        } else {
+          // Combine optional subjects or multi-teacher slots
+          if (row.Subject && !current.subject.includes(row.Subject)) {
+            current.subject += ' / ' + row.Subject;
+          }
+          if (row.Teacher && !current.teacher.includes(row.Teacher)) {
+            current.teacher += ' / ' + row.Teacher;
+          }
+        }
       }
     });
 
     // ── 4. DROPDOWN VALIDATION RULES ─────────────────────────────────────
-    // Subjects: read from Subjects sheet; fall back to unique values in Master_Schedule
     let subjectsList = DataAccess.getSheetDataAsObjects('Subjects')
                                  .map(r => r['Subject Name']).filter(s => s);
     if (subjectsList.length === 0) {
-      // Fallback: derive from Master_Schedule
       subjectsList = [...new Set(scheduleData.map(r => r['Subject']).filter(s => s))].sort();
     }
     const subjectRule = subjectsList.length > 0
@@ -112,7 +121,6 @@ const ClassViewManager = {
           .build()
       : null;
 
-    // Teachers: always read from Teachers sheet
     const teachersList = DataAccess.getSheetDataAsObjects('Teachers')
                                    .map(t => t['Teacher Name']).filter(t => t);
     const teacherRule = teachersList.length > 0
@@ -144,7 +152,6 @@ const ClassViewManager = {
     dataRange.setValues(gridOutput);
 
     // ── 7. PREMIUM STYLING ────────────────────────────────────────────────
-    // Base: font, alignment, wrap, borders
     dataRange.setFontFamily('Montserrat')
              .setHorizontalAlignment('center')
              .setVerticalAlignment('middle')
@@ -205,7 +212,7 @@ const ClassViewManager = {
     // Column widths
     sheet.setColumnWidth(1, 110);
     for (let i = 2; i <= numCols; i++) {
-      sheet.setColumnWidth(i, 145);
+      sheet.setColumnWidth(i, 150);
     }
 
     // Freeze header rows and day column
@@ -233,7 +240,7 @@ const ClassViewManager = {
     let rowIndexToUpdate = -1;
 
     for (let i = 1; i < values.length; i++) {
-      if (values[i][0] === day && values[i][1] == period && values[i][2] === className) {
+      if (values[i][0] === day && values[i][1] == period && ScheduleParser.rowIncludesClass({ Class: values[i][2] }, className)) {
         rowIndexToUpdate = i + 1; // 1-indexed
         break;
       }
@@ -246,7 +253,7 @@ const ClassViewManager = {
         msSheet.getRange(rowIndexToUpdate, 6).setValue(newValue);
       }
     } else {
-      // Row doesn't exist — create it only when Subject is edited (authoritative field)
+      // Row doesn't exist — create it only when Subject is edited
       if (editedType === 'Subject') {
         const classes   = DataAccess.getSheetDataAsObjects('Classes');
         const classData = classes.find(c => c['Class Name'] === className);

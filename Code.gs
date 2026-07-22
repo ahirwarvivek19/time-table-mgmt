@@ -7,6 +7,8 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Timetable System')
+    .addItem('🔄 Refresh All Timetable Views & Tabs', 'refreshAllViews')
+    .addSeparator()
     .addItem('Check For Conflicts', 'runValidation')
     .addItem('Generate Master Grid View', 'generateMasterGrid')
     .addSeparator()
@@ -22,6 +24,53 @@ function onOpen() {
     .addItem('Apply Global Styling', 'styleEntireSheet')
     .addItem('Import Timetable Data', 'importExcelData')
     .addToUi();
+}
+
+/**
+ * Refreshes all timetable views and dashboards (Class View, Teacher View, Teacher Day View, Master Grid View).
+ * Re-applies validation dropdowns and styling across the entire workbook.
+ */
+function refreshAllViews() {
+  // 1. Re-apply Master Schedule Dropdowns
+  applyMasterScheduleDropdowns_(/* silent= */ true);
+
+  // 2. Refresh Class View
+  const classViewSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Class_View');
+  let activeClass = '';
+  if (classViewSheet && classViewSheet.getLastRow() >= 3) {
+    activeClass = classViewSheet.getRange('B3').getValue();
+  }
+  const classesData = DataAccess.getSheetDataAsObjects('Classes');
+  if (!activeClass && classesData.length > 0) activeClass = classesData[0]['Class Name'];
+  if (activeClass) ClassViewManager.renderClassView(activeClass);
+
+  // 3. Refresh Teacher View
+  const teacherViewSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Teacher_View');
+  let activeTeacher = '';
+  if (teacherViewSheet && teacherViewSheet.getLastRow() >= 3) {
+    activeTeacher = teacherViewSheet.getRange('B3').getValue();
+  }
+  const teachersData = DataAccess.getSheetDataAsObjects('Teachers');
+  if (!activeTeacher && teachersData.length > 0) activeTeacher = teachersData[0]['Teacher Name'];
+  if (activeTeacher) TeacherViewManager.renderTeacherView(activeTeacher);
+
+  // 4. Refresh Day-wise Teacher View
+  const teacherDayViewSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Teacher_Day_View');
+  let activeDay = 'Monday';
+  let activeClassFilter = 'All Classes';
+  if (teacherDayViewSheet && teacherDayViewSheet.getLastRow() >= 3) {
+    activeDay = teacherDayViewSheet.getRange('B3').getValue() || 'Monday';
+    activeClassFilter = teacherDayViewSheet.getRange('E3').getValue() || 'All Classes';
+  }
+  TeacherDayViewManager.renderTeacherDayView(activeDay, activeClassFilter);
+
+  // 5. Refresh Master Grid View Data
+  refreshMasterGridData_();
+
+  // 6. Style entire sheet
+  styleEntireSheet();
+
+  SpreadsheetApp.getUi().alert('All Timetable Views & Tabs refreshed successfully!');
 }
 
 /**
