@@ -5,7 +5,8 @@
  */
 
 function openMultiSelectSidebar() {
-  const html = HtmlService.createHtmlOutputFromFile('MultiSelectUI')
+  const html = HtmlService.createTemplateFromFile('MultiSelectUI')
+    .evaluate()
     .setTitle('Multi-Select Picker')
     .setWidth(320);
   SpreadsheetApp.getUi().showSidebar(html);

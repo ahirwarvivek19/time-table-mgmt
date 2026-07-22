@@ -4,7 +4,8 @@
  */
 
 function openCoverManagerUI() {
-  const html = HtmlService.createHtmlOutputFromFile('CoverManagerUI')
+  const html = HtmlService.createTemplateFromFile('CoverManagerUI')
+    .evaluate()
     .setWidth(700)
     .setHeight(600)
     .setTitle('Daily Arrangement Manager');
