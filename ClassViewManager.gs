@@ -15,10 +15,10 @@ const ClassViewManager = {
     let sheet = ss.getSheetByName('Class_View');
     if (!sheet) sheet = ss.insertSheet('Class_View');
 
+    sheet.setFrozenRows(0);    // reset frozen state before any unmerges/clears
+    sheet.setFrozenColumns(0);
     sheet.clear();
     sheet.getDataRange().breakApart();
-    sheet.setFrozenRows(0);    // reset frozen state before any merges
-    sheet.setFrozenColumns(0);
     sheet.setHiddenGridlines(true);
 
     const days    = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

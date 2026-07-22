@@ -116,11 +116,16 @@ function styleEntireSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheets = ss.getSheets();
 
-  // Sheets that have their own custom styling — skip alternating rows for these
-  const skipBanding = ['Master_Grid_View', 'Class_View', 'Teacher_View', 'Teacher_Day_View', 'Teacher_Availability_Grid'];
+  // Sheets that have their own custom styling & layouts — skip default table styling for these
+  const customSheets = ['Master_Grid_View', 'Class_View', 'Teacher_View', 'Teacher_Day_View', 'Teacher_Availability_Grid'];
 
   sheets.forEach(sheet => {
     sheet.setHiddenGridlines(true);
+
+    // Skip custom view dashboards so their custom banners, frozen rows & merges are preserved
+    if (customSheets.includes(sheet.getName())) {
+      return;
+    }
 
     const lastCol = sheet.getLastColumn();
     const lastRow = sheet.getLastRow();
@@ -135,7 +140,7 @@ function styleEntireSheet() {
       sheet.setFrozenRows(1);
     }
 
-    if (lastRow > 1 && lastCol > 0 && !skipBanding.includes(sheet.getName())) {
+    if (lastRow > 1 && lastCol > 0) {
       const bodyRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
       bodyRange.setFontFamily('Montserrat');
 
@@ -148,7 +153,7 @@ function styleEntireSheet() {
     }
   });
 
-  SpreadsheetApp.getUi().alert('Global styling applied to all tabs!');
+  SpreadsheetApp.getUi().alert('Global styling applied to all standard data tabs!');
 }
 
 /**
