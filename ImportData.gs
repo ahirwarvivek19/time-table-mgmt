@@ -199,3 +199,63 @@ function resetPrefillDataToDefault() {
     ui.alert('No custom pre-fill data is currently saved. Already using default factory data.');
   }
 }
+
+/**
+ * Formats all teacher names across Teachers tab, Master_Schedule tab, and saved pre-fill data into Title Case / Camel Case.
+ */
+function formatAllTeacherNames() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+
+  let teacherCount = 0;
+  let scheduleCount = 0;
+
+  // 1. Format Teachers Sheet (Col A: Teacher Name)
+  const teacherSheet = ss.getSheetByName('Teachers');
+  if (teacherSheet && teacherSheet.getLastRow() > 1) {
+    const range = teacherSheet.getRange(2, 1, teacherSheet.getLastRow() - 1, 1);
+    const values = range.getValues();
+    const updatedValues = values.map(r => {
+      const formatted = ScheduleParser.formatTeacherName(r[0]);
+      if (formatted !== r[0]) teacherCount++;
+      return [formatted];
+    });
+    range.setValues(updatedValues);
+  }
+
+  // 2. Format Master_Schedule Sheet (Col F: Teacher)
+  const scheduleSheet = ss.getSheetByName('Master_Schedule');
+  if (scheduleSheet && scheduleSheet.getLastRow() > 1) {
+    const range = scheduleSheet.getRange(2, 6, scheduleSheet.getLastRow() - 1, 1);
+    const values = range.getValues();
+    const updatedValues = values.map(r => {
+      const formatted = ScheduleParser.formatTeacherName(r[0]);
+      if (formatted !== r[0]) scheduleCount++;
+      return [formatted];
+    });
+    range.setValues(updatedValues);
+  }
+
+  // 3. Format Backup Sheet if present
+  const backupSheet = ss.getSheetByName(PREFILL_SHEET_NAME);
+  if (backupSheet && backupSheet.getLastRow() > 1) {
+    const lastRow = backupSheet.getLastRow();
+    const tRange = backupSheet.getRange(2, 5, lastRow - 1, 1);
+    const tVals = tRange.getValues().map(r => [ScheduleParser.formatTeacherName(r[0])]);
+    tRange.setValues(tVals);
+
+    const sRange = backupSheet.getRange(2, 18, lastRow - 1, 1);
+    const sVals = sRange.getValues().map(r => [ScheduleParser.formatTeacherName(r[0])]);
+    sRange.setValues(sVals);
+  }
+
+  // 4. Cascade refresh views
+  refreshAllViews();
+
+  ui.alert(
+    '✏️ Teacher Names Formatted to Title Case / Camel Case!\n\n' +
+    '• Teachers sheet updated : ' + teacherCount + ' names\n' +
+    '• Master Schedule updated: ' + scheduleCount + ' entries\n\n' +
+    'All dashboards & dropdowns have been refreshed.'
+  );
+}

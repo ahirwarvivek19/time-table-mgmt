@@ -6,6 +6,32 @@
 const ScheduleParser = {
 
   /**
+   * Capitalizes a teacher name string into proper Title Case / Camel Case.
+   * Handles honorifics (Mrs., Smt., Sh., Mr., Dr.), room tags (Rm 206),
+   * and multi-teacher slash/comma/ampersand separated strings.
+   * @param {string} name
+   * @returns {string}
+   */
+  formatTeacherName: function(name) {
+    if (!name) return '';
+    return String(name).split(/(\s*[\/\&\,]\s*)/).map(part => {
+      if (['/', '&', ','].includes(part.trim())) return part;
+      return part.replace(/\b[a-zA-Z0-9\.]+\b/g, word => {
+        const raw = word.replace(/\.$/, '');
+        const upper = raw.toUpperCase();
+        if (['NSS', 'ICT', 'UHV', 'SUPW'].includes(upper)) {
+          return word.endsWith('.') ? upper + '.' : upper;
+        }
+        if (upper === 'RM') {
+          return word.endsWith('.') ? 'Rm.' : 'Rm';
+        }
+        const capitalized = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+        return word.endsWith('.') ? capitalized + '.' : capitalized;
+      });
+    }).join('');
+  },
+
+  /**
    * Splits a string by common delimiters (/, comma, newline, pipe).
    * @param {string} str
    * @returns {Array<string>}

@@ -24,6 +24,7 @@ function onOpen() {
     .addItem('Apply Master Schedule Dropdowns', 'applyMasterScheduleDropdowns')
     .addItem('Apply Global Styling', 'styleEntireSheet')
     .addItem('🗂️ Reorder Spreadsheet Tabs', 'reorderSheets')
+    .addItem('✏️ Format Teacher Names (Title Case)', 'formatAllTeacherNames')
     .addSeparator()
     .addItem('💾 Save Current Sheet as Pre-fill Data', 'saveCurrentSheetAsPrefillData')
     .addItem('📥 Import Pre-fill Timetable Data', 'importExcelData')
