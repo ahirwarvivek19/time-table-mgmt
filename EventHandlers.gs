@@ -11,6 +11,10 @@
 
 function onEdit(e) {
   if (!e) return;
+
+  // 1. Multi-Select dropdown handling for Subject & Teacher fields
+  handleMultiSelectDropdown(e);
+
   const sheetName = e.source.getActiveSheet().getName();
 
   if (sheetName === 'Class_View') {
@@ -22,6 +26,62 @@ function onEdit(e) {
   } else if (sheetName === 'Master_Schedule') {
     handleMasterScheduleEdit(e);
   }
+}
+
+/**
+ * Enables multi-select dropdown functionality for Subject and Teacher cells.
+ * Selecting a new dropdown item appends it with ' / '.
+ * Selecting an existing item toggles it off.
+ *
+ * Supported sheets:
+ * - Master_Schedule: Col 5 (Subject), Col 6 (Teacher)
+ * - Class_View: Rows 6+, Cols 2-9 (Subject and Teacher rows)
+ *
+ * @param {Object} e Event object from onEdit
+ */
+function handleMultiSelectDropdown(e) {
+  if (!e || !e.range || e.value === undefined || e.oldValue === undefined) return;
+
+  const sheet = e.source.getActiveSheet();
+  const sheetName = sheet.getName();
+  const row = e.range.getRow();
+  const col = e.range.getColumn();
+
+  let isTargetCell = false;
+
+  if (sheetName === 'Master_Schedule') {
+    // Header is row 1. Data starts row 2+. Col 5 = Subject, Col 6 = Teacher.
+    if (row >= 2 && (col === 5 || col === 6)) {
+      isTargetCell = true;
+    }
+  } else if (sheetName === 'Class_View') {
+    // Header is row 5. Data starts row 6+. Cols 2–9 = Periods 1–8.
+    if (row >= 6 && col >= 2 && col <= 9) {
+      isTargetCell = true;
+    }
+  }
+
+  if (!isTargetCell) return;
+
+  const newValue = String(e.value).trim();
+  const oldValue = String(e.oldValue).trim();
+
+  if (!newValue || !oldValue) return;
+
+  // Split existing values by / or comma
+  const existingItems = oldValue.split(/[\/\,]/).map(s => s.trim()).filter(Boolean);
+
+  let updatedItems = [];
+  if (existingItems.includes(newValue)) {
+    // Toggle OFF: remove the selected item
+    updatedItems = existingItems.filter(item => item !== newValue);
+  } else {
+    // Toggle ON: append the selected item
+    updatedItems = [...existingItems, newValue];
+  }
+
+  const finalValue = updatedItems.join(' / ');
+  e.range.setValue(finalValue);
 }
 
 // ─────────────────────────────────────────────────────────
