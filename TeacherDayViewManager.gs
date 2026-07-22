@@ -1,16 +1,17 @@
 /**
  * TeacherDayViewManager.gs
- * Renders a read-only matrix view for ALL teachers for a specific selected Day.
- * Helps admins plan and review school-wide daily coverage and schedules.
+ * Renders a read-only matrix view for ALL teachers for a specific selected Day and Class filter.
+ * Supports combined lectures across multiple classes for optional subjects (e.g. 11th A, 11th B - IP).
  */
 
 const TeacherDayViewManager = {
 
   /**
-   * Renders the day-wise teacher matrix for a specific day.
-   * @param {string} selectedDay  e.g. 'Monday', 'Tuesday', ...
+   * Renders the day-wise teacher matrix.
+   * @param {string} [selectedDay]  e.g. 'Monday', 'Tuesday', ...
+   * @param {string} [selectedClass] e.g. 'All Classes' or '11th A, 11th B'
    */
-  renderTeacherDayView: function(selectedDay) {
+  renderTeacherDayView: function(selectedDay, selectedClass) {
     const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     if (!selectedDay || !validDays.includes(selectedDay)) {
       selectedDay = 'Monday';
@@ -19,6 +20,12 @@ const TeacherDayViewManager = {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let sheet = ss.getSheetByName('Teacher_Day_View');
     if (!sheet) sheet = ss.insertSheet('Teacher_Day_View');
+
+    // Preserve previous selections if not passed explicitly
+    if (!selectedClass && sheet.getLastRow() >= 3) {
+      selectedClass = sheet.getRange('E3').getValue();
+    }
+    if (!selectedClass) selectedClass = 'All Classes';
 
     sheet.clear();
     sheet.getDataRange().breakApart();
@@ -30,13 +37,21 @@ const TeacherDayViewManager = {
     const numCols = 9; // Teacher col + 8 periods
     const startRow = 5;
 
-    // ── 1. TITLE BANNER (Rows 1–2) ────────────────────────────────────────
+    // ── 1. FETCH CLASSES & TEACHERS DATA ──────────────────────────────────
+    const classesData = DataAccess.getSheetDataAsObjects('Classes');
+    const classNames = classesData.map(c => c['Class Name']).filter(c => c).sort();
+    const filterOptions = ['All Classes', ...classNames];
+
+    const teachersData = DataAccess.getSheetDataAsObjects('Teachers');
+    const teacherNames = teachersData.map(t => t['Teacher Name']).filter(t => t).sort();
+
+    // ── 2. TITLE BANNER (Rows 1–2) ────────────────────────────────────────
     sheet.getRange(1, 1, 2, numCols)
          .setBackground('#1A3A4A')
          .setFontFamily('Montserrat');
     sheet.getRange(1, 2, 2, numCols - 1)
          .merge()
-         .setValue('📅  Day-Wise Teacher Schedule  ·  ' + selectedDay)
+         .setValue('📅  Day-Wise Teacher Schedule  ·  ' + selectedDay + (selectedClass !== 'All Classes' ? ' (' + selectedClass + ')' : ''))
          .setFontFamily('Montserrat')
          .setFontSize(16)
          .setFontWeight('bold')
@@ -46,7 +61,8 @@ const TeacherDayViewManager = {
     sheet.setRowHeight(1, 28);
     sheet.setRowHeight(2, 28);
 
-    // ── 2. DAY SELECTOR (Row 3) ───────────────────────────────────────────
+    // ── 3. CONTROLS BAR (Row 3): Day & Class Selectors ────────────────────
+    // A3 & B3: Day Dropdown
     sheet.getRange('A3')
          .setValue('Select Day:')
          .setFontWeight('bold')
@@ -60,6 +76,25 @@ const TeacherDayViewManager = {
     );
     b3Cell.setValue(selectedDay);
 
+    // D3 & E3: Class Filter Dropdown (Multi-select / combined class support)
+    sheet.getRange('D3')
+         .setValue('Filter Class:')
+         .setFontWeight('bold')
+         .setFontFamily('Montserrat')
+         .setFontColor('#5D6D7E')
+         .setHorizontalAlignment('right');
+
+    const e3Cell = sheet.getRange('E3');
+    if (filterOptions.length > 0) {
+      e3Cell.setDataValidation(
+        SpreadsheetApp.newDataValidation()
+          .requireValueInList(filterOptions, true)
+          .setAllowInvalid(true) // Allows free-text combined classes e.g. "11th A, 11th B"
+          .build()
+      );
+    }
+    e3Cell.setValue(selectedClass);
+
     sheet.getRange(3, 1, 1, numCols).setBackground('#F2F3F4').setFontFamily('Montserrat');
     sheet.setRowHeight(3, 36);
 
@@ -67,15 +102,12 @@ const TeacherDayViewManager = {
     sheet.getRange(4, 1, 1, numCols).setBackground('#E8EAED');
     sheet.setRowHeight(4, 6);
 
-    // ── 3. FETCH TEACHERS & SCHEDULE ──────────────────────────────────────
-    const teachersData = DataAccess.getSheetDataAsObjects('Teachers');
-    const teacherNames = teachersData.map(t => t['Teacher Name']).filter(t => t).sort();
-
     if (teacherNames.length === 0) {
       sheet.getRange(startRow, 1).setValue('No teachers found in Teachers tab.');
       return;
     }
 
+    // ── 4. FETCH SCHEDULE DATA ────────────────────────────────────────────
     const scheduleData = DataAccess.getSheetDataAsObjects('Master_Schedule')
       .filter(r => r.Day === selectedDay);
 
@@ -91,6 +123,11 @@ const TeacherDayViewManager = {
       const period = parseInt(row.Period);
       if (isNaN(period) || period < 1 || period > 8) return;
 
+      // Filter by Class selection if specific class requested
+      if (selectedClass !== 'All Classes' && !ScheduleParser.rowIncludesClass(row, selectedClass)) {
+        return;
+      }
+
       const assignments = ScheduleParser.parseRowAssignments(row);
       assignments.forEach(assign => {
         if (assign.teacher && lookup[assign.teacher] && lookup[assign.teacher][period]) {
@@ -102,30 +139,28 @@ const TeacherDayViewManager = {
       });
     });
 
-    // ── 4. BUILD GRID OUTPUT ──────────────────────────────────────────────
+    // ── 5. BUILD GRID OUTPUT ──────────────────────────────────────────────
     const headers = ['Teacher / Period', 'Period 1', 'Period 2', 'Period 3',
                      'Period 4', 'Period 5', 'Period 6', 'Period 7', 'Period 8'];
     const gridOutput = [headers];
+    const metadataGrid = []; // Stores { isFree, isCombined, isClash } per cell
 
     teacherNames.forEach(teacher => {
       const row = [teacher];
+      const metaRow = [{ isFree: false, isCombined: false, isClash: false }];
+
       periods.forEach(period => {
         const slots = lookup[teacher][period];
-        if (slots.length === 0) {
-          row.push('FREE');
-        } else if (slots.length === 1) {
-          const s = slots[0];
-          row.push(s.cls + (s.subject ? ' - ' + s.subject : ''));
-        } else {
-          // Multiple classes double-booked (Clash)
-          const clashDesc = slots.map(s => s.cls + ' (' + s.subject + ')').join(' / ');
-          row.push('⚠️ CLASH: ' + clashDesc);
-        }
+        const grouped = ScheduleParser.groupTeacherSlots(slots);
+        row.push(grouped.display);
+        metaRow.push(grouped);
       });
+
       gridOutput.push(row);
+      metadataGrid.push(metaRow);
     });
 
-    // ── 5. WRITE DATA & STYLING ───────────────────────────────────────────
+    // ── 6. WRITE DATA & APPLY PREMIUM STYLING ────────────────────────────
     const numRows = gridOutput.length;
     const dataRange = sheet.getRange(startRow, 1, numRows, numCols);
     dataRange.setValues(gridOutput);
@@ -145,7 +180,7 @@ const TeacherDayViewManager = {
          .setFontSize(11);
     sheet.setRowHeight(startRow, 40);
 
-    // Build background color matrix for body cells
+    // Build background color & typography matrices for body cells
     const bgColors = [];
     const fontColors = [];
     const fontWeights = [];
@@ -165,18 +200,22 @@ const TeacherDayViewManager = {
 
       // Periods 1-8 (Cols 2-9)
       for (let c = 1; c < numCols; c++) {
-        const val = gridOutput[r][c];
-        if (val === 'FREE') {
-          rowBg.push('#EAFAF1');    // soft green
-          rowFont.push('#1E8449');  // dark green
+        const meta = metadataGrid[r - 1][c];
+        if (meta.isFree) {
+          rowBg.push('#EAFAF1');    // soft green for FREE
+          rowFont.push('#1E8449');
           rowWeight.push('bold');
-        } else if (val.startsWith('⚠️ CLASH')) {
-          rowBg.push('#FDEDEC');    // soft red
-          rowFont.push('#C0392B');  // dark red
+        } else if (meta.isClash) {
+          rowBg.push('#FDEDEC');    // soft red for true double-booking clash
+          rowFont.push('#C0392B');
+          rowWeight.push('bold');
+        } else if (meta.isCombined) {
+          rowBg.push('#F5EEF8');    // soft lavender/purple for combined optional lectures
+          rowFont.push('#5B2C6F');
           rowWeight.push('bold');
         } else {
           rowBg.push(r % 2 === 0 ? '#EBF5FB' : '#FDFEFE'); // light blue / white
-          rowFont.push('#1A5276');  // deep blue
+          rowFont.push('#1A5276');
           rowWeight.push('normal');
         }
       }
@@ -196,7 +235,7 @@ const TeacherDayViewManager = {
     // Column widths
     sheet.setColumnWidth(1, 190);
     for (let i = 2; i <= numCols; i++) {
-      sheet.setColumnWidth(i, 150);
+      sheet.setColumnWidth(i, 155);
     }
 
     sheet.setFrozenRows(startRow);

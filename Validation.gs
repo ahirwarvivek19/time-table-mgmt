@@ -47,16 +47,21 @@ function runValidation() {
       tracking[timeKey] = { teachers: {}, rooms: {} };
     }
 
-    const rowObj = { Teacher: teacher, Subject: values[i][4] };
+    const currentSubject = values[i][4] || '';
+    const rowObj = { Teacher: teacher, Subject: currentSubject };
     const assignments = ScheduleParser.parseRowAssignments(rowObj);
     const teacherList = [...new Set(assignments.map(a => a.teacher).filter(Boolean))];
 
     teacherList.forEach(t => {
       if (tracking[timeKey].teachers[t]) {
-        clash = true;
-        clashMsg.push(`Teacher Clash (${t})`);
+        const prev = tracking[timeKey].teachers[t];
+        // If assigned to different subjects at the same time -> True Clash
+        if (prev.subject && currentSubject && prev.subject.trim().toLowerCase() !== currentSubject.trim().toLowerCase()) {
+          clash = true;
+          clashMsg.push(`Teacher Clash (${t})`);
+        }
       } else {
-        tracking[timeKey].teachers[t] = values[i][2];
+        tracking[timeKey].teachers[t] = { class: values[i][2], subject: currentSubject };
       }
 
       if (unavailableMap[t] && unavailableMap[t].includes(day)) {

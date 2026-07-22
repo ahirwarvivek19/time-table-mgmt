@@ -84,10 +84,12 @@ function handleTeacherViewEdit(e) {
 function handleTeacherDayViewEdit(e) {
   const range = e.range;
 
-  // B3 dropdown → re-render for new day
-  if (range.getRow() === 3 && range.getColumn() === 2) {
-    const day = range.getValue();
-    if (day) TeacherDayViewManager.renderTeacherDayView(day);
+  // Row 3 edits (B3 = Day selector, E3 = Class filter)
+  if (range.getRow() === 3) {
+    const sheet = e.source.getActiveSheet();
+    const day = sheet.getRange('B3').getValue() || 'Monday';
+    const filterClass = sheet.getRange('E3').getValue() || 'All Classes';
+    TeacherDayViewManager.renderTeacherDayView(day, filterClass);
   }
 }
 
@@ -128,7 +130,8 @@ function handleMasterScheduleEdit(e) {
   const teacherDayViewSheet = sheet.getSheetByName('Teacher_Day_View');
   if (teacherDayViewSheet) {
     const activeDay = teacherDayViewSheet.getRange('B3').getValue() || 'Monday';
-    TeacherDayViewManager.renderTeacherDayView(activeDay);
+    const activeClassFilter = teacherDayViewSheet.getRange('E3').getValue() || 'All Classes';
+    TeacherDayViewManager.renderTeacherDayView(activeDay, activeClassFilter);
   }
 
   // 4. Refresh Master_Grid_View data (lightweight — no re-styling)
