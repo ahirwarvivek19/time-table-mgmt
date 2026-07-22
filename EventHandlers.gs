@@ -83,13 +83,34 @@ function handleTeacherViewEdit(e) {
 
 function handleTeacherDayViewEdit(e) {
   const range = e.range;
+  const sheet = e.source.getActiveSheet();
+  const row = range.getRow();
+  const col = range.getColumn();
 
   // Row 3 edits (B3 = Day selector, E3 = Class filter)
-  if (range.getRow() === 3) {
-    const sheet = e.source.getActiveSheet();
+  if (row === 3) {
     const day = sheet.getRange('B3').getValue() || 'Monday';
     const filterClass = sheet.getRange('E3').getValue() || 'All Classes';
     TeacherDayViewManager.renderTeacherDayView(day, filterClass);
+    return;
+  }
+
+  // Grid edits: Row 6+ (Row 5 is header), Cols 2–9 (Period 1 to 8)
+  if (row >= 6 && col >= 2 && col <= 9) {
+    const selectedDay = sheet.getRange('B3').getValue() || 'Monday';
+    const teacherName = sheet.getRange(row, 1).getValue();
+    if (!teacherName) return;
+
+    const period = col - 1; // Col 2 = Period 1
+    const newValue = range.getValue();
+
+    // Perform write-back to Master_Schedule
+    TeacherDayViewManager.updateMasterFromTeacherDayView(selectedDay, teacherName, period, newValue);
+
+    // Re-render Teacher_Day_View and cascade update other views
+    const activeClassFilter = sheet.getRange('E3').getValue() || 'All Classes';
+    TeacherDayViewManager.renderTeacherDayView(selectedDay, activeClassFilter);
+    refreshMasterGridData_();
   }
 }
 

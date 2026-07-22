@@ -240,5 +240,78 @@ const TeacherDayViewManager = {
 
     sheet.setFrozenRows(startRow);
     sheet.setFrozenColumns(1);
+  },
+
+  /**
+   * Updates Master_Schedule from an inline cell edit made on Teacher_Day_View.
+   * @param {string} selectedDay
+   * @param {string} teacherName
+   * @param {number} period
+   * @param {string} newValue
+   */
+  updateMasterFromTeacherDayView: function(selectedDay, teacherName, period, newValue) {
+    if (!selectedDay || !teacherName || !period) return;
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const msSheet = ss.getSheetByName('Master_Schedule');
+    if (!msSheet) return;
+
+    const dataRange = msSheet.getDataRange();
+    const values = dataRange.getValues();
+    const cleanValue = String(newValue || '').trim();
+
+    // If setting to FREE or empty: unassign teacher from this slot
+    if (!cleanValue || cleanValue.toUpperCase() === 'FREE') {
+      for (let i = 1; i < values.length; i++) {
+        if (values[i][0] === selectedDay && values[i][1] == period) {
+          const rowObj = { Teacher: values[i][5], Subject: values[i][4] };
+          if (ScheduleParser.rowIncludesTeacher(rowObj, teacherName)) {
+            const teachers = ScheduleParser.splitList(values[i][5]);
+            const updatedTeachers = teachers.filter(t => t.toLowerCase() !== teacherName.toLowerCase());
+            msSheet.getRange(i + 1, 6).setValue(updatedTeachers.join(' / '));
+          }
+        }
+      }
+      return;
+    }
+
+    // Parse Class and Subject from typed value e.g. "6th A - English" or "6th A"
+    let targetClass = cleanValue;
+    let targetSubject = '';
+
+    if (cleanValue.includes(' - ')) {
+      const parts = cleanValue.split(' - ');
+      targetClass = parts[0].trim();
+      targetSubject = parts.slice(1).join(' - ').trim();
+    }
+
+    // Look for existing row matching Day, Period, Class
+    let rowIndexToUpdate = -1;
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][0] === selectedDay && values[i][1] == period && ScheduleParser.rowIncludesClass({ Class: values[i][2] }, targetClass)) {
+        rowIndexToUpdate = i + 1;
+        break;
+      }
+    }
+
+    if (rowIndexToUpdate > 0) {
+      // Update existing row's Teacher field (append or set)
+      const existingTeacherStr = values[rowIndexToUpdate - 1][5] || '';
+      const existingTeachers = ScheduleParser.splitList(existingTeacherStr);
+      if (!existingTeachers.some(t => t.toLowerCase() === teacherName.toLowerCase())) {
+        const updatedTeachers = existingTeacherStr ? existingTeacherStr + ' / ' + teacherName : teacherName;
+        msSheet.getRange(rowIndexToUpdate, 6).setValue(updatedTeachers);
+      }
+      if (targetSubject) {
+        msSheet.getRange(rowIndexToUpdate, 5).setValue(targetSubject);
+      }
+    } else {
+      // Create new row in Master_Schedule
+      const classes = DataAccess.getSheetDataAsObjects('Classes');
+      const classData = classes.find(c => c['Class Name'] === targetClass);
+      const tier = classData ? classData['Academic Tier'] : '';
+      const room = classData ? classData['Room Assigned'] : '';
+      msSheet.appendRow([selectedDay, period, targetClass, tier, targetSubject, teacherName, room, '']);
+    }
   }
 };

@@ -23,7 +23,11 @@ function onOpen() {
     .addItem('Setup Spreadsheets (Run Once)', 'setupInitialSpreadsheet')
     .addItem('Apply Master Schedule Dropdowns', 'applyMasterScheduleDropdowns')
     .addItem('Apply Global Styling', 'styleEntireSheet')
-    .addItem('Import Timetable Data', 'importExcelData')
+    .addItem('🗂️ Reorder Spreadsheet Tabs', 'reorderSheets')
+    .addSeparator()
+    .addItem('💾 Save Current Sheet as Pre-fill Data', 'saveCurrentSheetAsPrefillData')
+    .addItem('📥 Import Pre-fill Timetable Data', 'importExcelData')
+    .addItem('🔄 Reset Pre-fill Data to Default', 'resetPrefillDataToDefault')
     .addToUi();
 }
 
@@ -68,7 +72,10 @@ function refreshAllViews() {
   // 5. Refresh Master Grid View Data
   refreshMasterGridData_();
 
-  // 6. Style entire sheet
+  // 6. Reorder tabs (Teachers, Subjects, Classes, Rooms, Master_Schedule, then all Views)
+  reorderSheets();
+
+  // 7. Style entire sheet
   styleEntireSheet();
 
   SpreadsheetApp.getUi().alert('All Timetable Views & Tabs refreshed successfully!');
@@ -123,8 +130,8 @@ function styleEntireSheet() {
   sheets.forEach(sheet => {
     sheet.setHiddenGridlines(true);
 
-    // Skip custom view dashboards so their custom banners, frozen rows & merges are preserved
-    if (customSheets.includes(sheet.getName())) {
+    // Skip custom view dashboards & internal hidden sheets so their custom banners, frozen rows & merges are preserved
+    if (customSheets.includes(sheet.getName()) || sheet.getName().startsWith('_')) {
       return;
     }
 
@@ -220,7 +227,7 @@ function setupInitialSpreadsheet() {
   styleEntireSheet();
 
   // Reorder sheets to the correct tab order
-  reorderSheets_();
+  reorderSheets();
 
   // Apply dropdowns to Master_Schedule
   applyMasterScheduleDropdowns_(/* silent= */ true);
@@ -332,21 +339,32 @@ function applyMasterScheduleDropdowns_(silent) {
 }
 
 /**
- * Reorders the spreadsheet tabs to the canonical display order.
- * Called automatically by setupInitialSpreadsheet.
+ * Reorders the spreadsheet tabs: Teachers, Subjects, Classes, Rooms, Master_Schedule, followed by all Views.
+ * Public menu entry point.
  */
-function reorderSheets_() {
+function reorderSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const desiredOrder = [
-    'Teachers', 'Subjects', 'Classes', 'Rooms',
-    'Master_Schedule', 'Master_Grid_View', 'Class_View', 'Teacher_View', 'Teacher_Day_View', 'Cover_Manager',
-    'Teacher_Availability_Grid'
+    'Teachers',
+    'Subjects',
+    'Classes',
+    'Rooms',
+    'Master_Schedule',
+    'Class_View',
+    'Teacher_View',
+    'Teacher_Day_View',
+    'Master_Grid_View',
+    'Teacher_Availability_Grid',
+    'Cover_Manager'
   ];
-  desiredOrder.forEach((name, idx) => {
+
+  let currentPos = 1;
+  desiredOrder.forEach(name => {
     const sheet = ss.getSheetByName(name);
     if (sheet) {
       ss.setActiveSheet(sheet);
-      ss.moveActiveSheet(idx + 1);
+      ss.moveActiveSheet(currentPos);
+      currentPos++;
     }
   });
 }

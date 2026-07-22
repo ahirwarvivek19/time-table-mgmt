@@ -213,54 +213,194 @@ const RAW_TEACHER_ROWS = ${teachersJson};
 const RAW_SUBJECT_ROWS = ${subjectsJson};
 const RAW_SCHEDULE     = ${scheduleJson};
 
+const PREFILL_SHEET_NAME = '_Prefill_Data_Backup';
+
+/**
+ * Saves all current data present in the Google Sheet (Classes, Teachers, Subjects, Master_Schedule)
+ * as the pre-fill import data snapshot.
+ */
+function saveCurrentSheetAsPrefillData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+
+  // 1. Read Classes Data
+  const classSheet = ss.getSheetByName('Classes');
+  let classRows = [];
+  if (classSheet && classSheet.getLastRow() > 1) {
+    const vals = classSheet.getRange(2, 1, classSheet.getLastRow() - 1, 3).getValues();
+    classRows = vals.filter(r => String(r[0]).trim() !== '');
+  }
+
+  // 2. Read Teachers Data
+  const teacherSheet = ss.getSheetByName('Teachers');
+  let teacherRows = [];
+  if (teacherSheet && teacherSheet.getLastRow() > 1) {
+    const vals = teacherSheet.getRange(2, 1, teacherSheet.getLastRow() - 1, 5).getValues();
+    teacherRows = vals.filter(r => String(r[0]).trim() !== '');
+  }
+
+  // 3. Read Subjects Data
+  const subjectSheet = ss.getSheetByName('Subjects');
+  let subjectRows = [];
+  if (subjectSheet && subjectSheet.getLastRow() > 1) {
+    const vals = subjectSheet.getRange(2, 1, subjectSheet.getLastRow() - 1, 1).getValues();
+    subjectRows = vals.filter(r => String(r[0]).trim() !== '');
+  }
+
+  // 4. Read Master Schedule Data
+  const scheduleSheet = ss.getSheetByName('Master_Schedule');
+  let scheduleRows = [];
+  if (scheduleSheet && scheduleSheet.getLastRow() > 1) {
+    const vals = scheduleSheet.getRange(2, 1, scheduleSheet.getLastRow() - 1, 8).getValues();
+    scheduleRows = vals.filter(r => String(r[0]).trim() !== '' || String(r[2]).trim() !== '');
+  }
+
+  if (classRows.length === 0 && teacherRows.length === 0 && scheduleRows.length === 0) {
+    ui.alert('⚠️ No valid data found in the current sheets to save as pre-fill import data.');
+    return;
+  }
+
+  // Get or create backup sheet
+  let backupSheet = ss.getSheetByName(PREFILL_SHEET_NAME);
+  if (!backupSheet) {
+    backupSheet = ss.insertSheet(PREFILL_SHEET_NAME);
+  } else {
+    backupSheet.clear();
+  }
+
+  // Write Headers
+  backupSheet.getRange(1, 1, 1, 3).setValues([['Class Name', 'Academic Tier', 'Room Assigned']]);
+  backupSheet.getRange(1, 5, 1, 5).setValues([['Teacher Name', 'Subject Specialization', 'Max Hours / Week', 'Days Unavailable', 'Total Hours Scheduled']]);
+  backupSheet.getRange(1, 11, 1, 1).setValues([['Subject Name']]);
+  backupSheet.getRange(1, 13, 1, 8).setValues([['Day', 'Period', 'Class', 'Academic Tier', 'Subject', 'Teacher', 'Room', 'Clash Status']]);
+
+  // Write Data Blocks
+  if (classRows.length > 0) {
+    backupSheet.getRange(2, 1, classRows.length, 3).setValues(classRows);
+  }
+  if (teacherRows.length > 0) {
+    backupSheet.getRange(2, 5, teacherRows.length, 5).setValues(teacherRows);
+  }
+  if (subjectRows.length > 0) {
+    backupSheet.getRange(2, 11, subjectRows.length, 1).setValues(subjectRows);
+  }
+  if (scheduleRows.length > 0) {
+    backupSheet.getRange(2, 13, scheduleRows.length, 8).setValues(scheduleRows);
+  }
+
+  backupSheet.hideSheet();
+
+  ui.alert(
+    '✅ Pre-fill Import Data Saved Successfully!\\n\\n' +
+    'The current Google Sheet data is now saved as the default pre-fill template:\\n' +
+    '• Classes  : ' + classRows.length + '\\n' +
+    '• Teachers : ' + teacherRows.length + '\\n' +
+    '• Subjects : ' + subjectRows.length + '\\n' +
+    '• Schedule : ' + scheduleRows.length + ' entries\\n\\n' +
+    'Running "Import Timetable Data" in the future will load this saved snapshot.'
+  );
+}
+
 /**
  * Imports all class, teacher, subject, and schedule data into the Google Sheet.
- * Safe to run multiple times — clears existing data before writing.
+ * Uses custom saved pre-fill data snapshot if present, otherwise falls back to factory defaults.
  */
 function importExcelData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
+  const backupSheet = ss.getSheetByName(PREFILL_SHEET_NAME);
+
+  let classRows = [];
+  let teacherRows = [];
+  let subjectRows = [];
+  let scheduleRows = [];
+  let isCustomPrefill = false;
+
+  if (backupSheet && backupSheet.getLastRow() > 1) {
+    isCustomPrefill = true;
+    const lastRow = backupSheet.getLastRow();
+    
+    // Read Classes
+    const cVals = backupSheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    classRows = cVals.filter(r => String(r[0]).trim() !== '');
+
+    // Read Teachers
+    const tVals = backupSheet.getRange(2, 5, lastRow - 1, 5).getValues();
+    teacherRows = tVals.filter(r => String(r[0]).trim() !== '');
+
+    // Read Subjects
+    const sVals = backupSheet.getRange(2, 11, lastRow - 1, 1).getValues();
+    subjectRows = sVals.filter(r => String(r[0]).trim() !== '');
+
+    // Read Schedule
+    const schVals = backupSheet.getRange(2, 13, lastRow - 1, 8).getValues();
+    scheduleRows = schVals.filter(r => String(r[0]).trim() !== '' || String(r[2]).trim() !== '');
+  } else {
+    // Fallback to RAW constants from ImportData.gs
+    classRows   = RAW_CLASS_ROWS;
+    teacherRows = RAW_TEACHER_ROWS;
+    subjectRows = RAW_SUBJECT_ROWS;
+    scheduleRows = RAW_SCHEDULE.map(r => [r.Day, r.Period, r.Class, r.Tier, r.Subject, r.Teacher, r.Room || '', r.ClashStatus || '']);
+  }
 
   // 1. Populate Classes
   const classSheet = ss.getSheetByName('Classes');
-  if (classSheet && RAW_CLASS_ROWS.length > 0) {
+  if (classSheet && classRows.length > 0) {
     const lastRow = classSheet.getLastRow();
     if (lastRow > 1) classSheet.getRange(2, 1, lastRow - 1, classSheet.getLastColumn()).clearContent();
-    classSheet.getRange(2, 1, RAW_CLASS_ROWS.length, 3).setValues(RAW_CLASS_ROWS);
+    classSheet.getRange(2, 1, classRows.length, 3).setValues(classRows);
   }
 
   // 2. Populate Teachers
   const teacherSheet = ss.getSheetByName('Teachers');
-  if (teacherSheet && RAW_TEACHER_ROWS.length > 0) {
+  if (teacherSheet && teacherRows.length > 0) {
     const lastRow = teacherSheet.getLastRow();
     if (lastRow > 1) teacherSheet.getRange(2, 1, lastRow - 1, teacherSheet.getLastColumn()).clearContent();
-    teacherSheet.getRange(2, 1, RAW_TEACHER_ROWS.length, 5).setValues(RAW_TEACHER_ROWS);
+    teacherSheet.getRange(2, 1, teacherRows.length, 5).setValues(teacherRows);
   }
 
-  // 3. Populate Subjects (master list for Class View dropdowns)
+  // 3. Populate Subjects
   const subjectSheet = ss.getSheetByName('Subjects');
-  if (subjectSheet && RAW_SUBJECT_ROWS.length > 0) {
+  if (subjectSheet && subjectRows.length > 0) {
     const lastRow = subjectSheet.getLastRow();
     if (lastRow > 1) subjectSheet.getRange(2, 1, lastRow - 1, 1).clearContent();
-    subjectSheet.getRange(2, 1, RAW_SUBJECT_ROWS.length, 1).setValues(RAW_SUBJECT_ROWS);
+    subjectSheet.getRange(2, 1, subjectRows.length, 1).setValues(subjectRows);
   }
 
   // 4. Populate Master Schedule
   const scheduleSheet = ss.getSheetByName('Master_Schedule');
-  if (scheduleSheet && RAW_SCHEDULE.length > 0) {
-    const schedData = RAW_SCHEDULE.map(r => [r.Day, r.Period, r.Class, r.Tier, r.Subject, r.Teacher, '', '']);
+  if (scheduleSheet && scheduleRows.length > 0) {
     const lastRow = scheduleSheet.getLastRow();
     if (lastRow > 1) scheduleSheet.getRange(2, 1, lastRow - 1, scheduleSheet.getLastColumn()).clearContent();
-    scheduleSheet.getRange(2, 1, schedData.length, 8).setValues(schedData);
+    scheduleSheet.getRange(2, 1, scheduleRows.length, 8).setValues(scheduleRows);
   }
 
   ui.alert(
-    'Import Complete! All school data loaded:\\n' +
-    '• Classes  : ${allClassRows.length}\\n' +
-    '• Teachers : ${allTeacherRows.length}\\n' +
-    '• Subjects : ${allSubjectRows.length}\\n' +
-    '• Schedule : ${allSchedule.length} entries'
+    'Import Complete! ' + (isCustomPrefill ? 'Loaded saved sheet pre-fill data:' : 'Loaded default pre-fill data:') + '\\n' +
+    '• Classes  : ' + classRows.length + '\\n' +
+    '• Teachers : ' + teacherRows.length + '\\n' +
+    '• Subjects : ' + subjectRows.length + '\\n' +
+    '• Schedule : ' + scheduleRows.length + ' entries'
   );
+}
+
+/**
+ * Resets pre-fill import data to factory defaults.
+ */
+function resetPrefillDataToDefault() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const backupSheet = ss.getSheetByName(PREFILL_SHEET_NAME);
+
+  if (backupSheet) {
+    ss.deleteSheet(backupSheet);
+    ui.alert(
+      '🔄 Reset Complete!\\n\\n' +
+      'Custom saved pre-fill data has been removed. Running "Import Timetable Data" will now load the factory default school data.'
+    );
+  } else {
+    ui.alert('No custom pre-fill data is currently saved. Already using default factory data.');
+  }
 }
 `;
 
