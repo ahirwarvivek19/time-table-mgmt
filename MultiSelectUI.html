@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: 'Montserrat', sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #F8F9FA;
+      color: #2C3E50;
+      padding: 16px;
+    }
+    .header {
+      background: #1A3A4A;
+      color: #FFFFFF;
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    .header h2 {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .header p {
+      font-size: 11px;
+      opacity: 0.8;
+      margin-top: 2px;
+    }
+    .search-box {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #CCD1D9;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .search-box:focus {
+      border-color: #2980B9;
+    }
+    .actions-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .btn-link {
+      background: none;
+      border: none;
+      color: #2980B9;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-link:hover {
+      text-decoration: underline;
+    }
+    .counter {
+      font-size: 11px;
+      color: #7F8C8D;
+      font-weight: 600;
+    }
+    .options-list {
+      max-height: 380px;
+      overflow-y: auto;
+      background: #FFFFFF;
+      border: 1px solid #E5E9F0;
+      border-radius: 8px;
+      padding: 6px 0;
+      margin-bottom: 16px;
+    }
+    .option-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #34495E;
+      transition: background 0.15s;
+    }
+    .option-item:hover {
+      background-color: #EBF5FB;
+    }
+    .option-item input[type="checkbox"] {
+      margin-right: 10px;
+      width: 16px;
+      height: 16px;
+      accent-color: #2980B9;
+      cursor: pointer;
+    }
+    .btn-apply {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #1A3A4A 0%, #2980B9 100%);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(41, 128, 185, 0.3);
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn-apply:hover {
+      opacity: 0.95;
+    }
+    .btn-apply:active {
+      transform: scale(0.99);
+    }
+    .status-msg {
+      margin-top: 8px;
+      font-size: 11px;
+      text-align: center;
+      color: #27AE60;
+      font-weight: 600;
+      min-height: 16px;
+    }
+    .empty-state {
+      padding: 20px;
+      text-align: center;
+      color: #95A5A6;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h2 id="fieldTitle">Multi-Select Picker</h2>
+    <p id="fieldSubtitle">Select multiple items for active cell</p>
+  </div>
+
+  <input type="text" id="searchInput" class="search-box" placeholder="🔍 Search options..." onkeyup="filterOptions()">
+
+  <div class="actions-bar">
+    <div>
+      <button class="btn-link" onclick="selectAll(true)">Select All</button>
+      <span style="color:#CCD1D9"> | </span>
+      <button class="btn-link" onclick="selectAll(false)">Clear All</button>
+    </div>
+    <span class="counter" id="selectedCount">0 selected</span>
+  </div>
+
+  <div class="options-list" id="optionsContainer">
+    <div class="empty-state">Loading options...</div>
+  </div>
+
+  <button class="btn-apply" onclick="applySelection()">Apply to Spreadsheet Cell</button>
+  <div class="status-msg" id="statusMsg"></div>
+
+  <script>
+    let allOptions = [];
+    let selectedSet = new Set();
+
+    window.onload = function() {
+      loadData();
+    };
+
+    function loadData() {
+      google.script.run
+        .withSuccessHandler(renderUI)
+        .withFailureHandler(showError)
+        .apiGetPickerOptions();
+    }
+
+    function renderUI(data) {
+      if (!data) {
+        showError('Select a valid Subject or Teacher cell in Master_Schedule or Class_View.');
+        return;
+      }
+
+      document.getElementById('fieldTitle').innerText = 'Select ' + data.fieldType + 's';
+      document.getElementById('fieldSubtitle').innerText = 'Editing cell: ' + data.cellAddress + ' (' + data.sheetName + ')';
+
+      allOptions = data.allOptions || [];
+      selectedSet = new Set(data.currentSelections || []);
+
+      buildList();
+    }
+
+    function buildList() {
+      const container = document.getElementById('optionsContainer');
+      container.innerHTML = '';
+
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+      const filtered = allOptions.filter(opt => opt.toLowerCase().includes(query));
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state">No matching options found.</div>';
+        updateCounter();
+        return;
+      }
+
+      filtered.forEach(opt => {
+        const item = document.createElement('label');
+        item.className = 'option-item';
+
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.value = opt;
+        chk.checked = selectedSet.has(opt);
+        chk.onchange = function() {
+          if (chk.checked) selectedSet.add(opt);
+          else selectedSet.delete(opt);
+          updateCounter();
+        };
+
+        const span = document.createElement('span');
+        span.innerText = opt;
+
+        item.appendChild(chk);
+        item.appendChild(span);
+        container.appendChild(item);
+      });
+
+      updateCounter();
+    }
+
+    function filterOptions() {
+      buildList();
+    }
+
+    function selectAll(check) {
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+      allOptions.forEach(opt => {
+        if (!query || opt.toLowerCase().includes(query)) {
+          if (check) selectedSet.add(opt);
+          else selectedSet.delete(opt);
+        }
+      });
+      buildList();
+    }
+
+    function updateCounter() {
+      document.getElementById('selectedCount').innerText = selectedSet.size + ' selected';
+    }
+
+    function applySelection() {
+      const selectedArray = Array.from(selectedSet);
+      const btn = document.querySelector('.btn-apply');
+      btn.innerText = 'Applying...';
+      btn.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function() {
+          btn.innerText = 'Apply to Spreadsheet Cell';
+          btn.disabled = false;
+          const status = document.getElementById('statusMsg');
+          status.innerText = '✓ Cell updated successfully!';
+          setTimeout(() => { status.innerText = ''; }, 3000);
+        })
+        .withFailureHandler(function(err) {
+          btn.innerText = 'Apply to Spreadsheet Cell';
+          btn.disabled = false;
+          showError(err.message || 'Error updating cell');
+        })
+        .apiApplyPickerSelections(selectedArray);
+    }
+
+    function showError(msg) {
+      const container = document.getElementById('optionsContainer');
+      container.innerHTML = '<div class="empty-state" style="color:#C0392B">' + (msg || 'Error') + '</div>';
+    }
+  </script>
+</body>
+</html>

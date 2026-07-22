@@ -7,6 +7,7 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Timetable System')
+    .addItem('📋 Open Multi-Select Picker Sidebar', 'openMultiSelectSidebar')
     .addItem('🔄 Refresh All Timetable Views & Tabs', 'refreshAllViews')
     .addSeparator()
     .addItem('Check For Conflicts', 'runValidation')
