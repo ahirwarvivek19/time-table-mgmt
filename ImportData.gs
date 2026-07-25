@@ -115,7 +115,7 @@ function importTeachersData(silent) {
   }
 
   applyMasterScheduleDropdowns_(/* silent= */ true);
-  refreshAllViews();
+  refreshAllViews(/* silent= */ true);
 
   if (!silent) {
     SpreadsheetApp.getUi().alert(
@@ -179,7 +179,7 @@ function importScheduleData(silent) {
   }
 
   applyMasterScheduleDropdowns_(/* silent= */ true);
-  refreshAllViews();
+  refreshAllViews(/* silent= */ true);
 
   if (!silent) {
     SpreadsheetApp.getUi().alert(

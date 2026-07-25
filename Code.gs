@@ -38,8 +38,9 @@ function onOpen() {
 /**
  * Refreshes all timetable views and dashboards (Class View, Teacher View, Teacher Day View, Master Grid View).
  * Re-applies validation dropdowns and styling across the entire workbook.
+ * @param {boolean} [silent=false] When true, suppresses the completion UI alert.
  */
-function refreshAllViews() {
+function refreshAllViews(silent) {
   // 1. Re-apply Master Schedule Dropdowns
   applyMasterScheduleDropdowns_(/* silent= */ true);
 
@@ -79,10 +80,12 @@ function refreshAllViews() {
   // 6. Reorder tabs (Teachers, Subjects, Classes, Master_Schedule, then all Views)
   reorderSheets();
 
-  // 7. Style entire sheet
-  styleEntireSheet();
+  // 7. Style entire sheet silently
+  styleEntireSheet(/* silent= */ true);
 
-  SpreadsheetApp.getUi().alert('All Timetable Views & Tabs refreshed successfully!');
+  if (!silent) {
+    SpreadsheetApp.getUi().alert('All Timetable Views & Tabs refreshed successfully!');
+  }
 }
 
 /**
@@ -123,8 +126,9 @@ function initTeacherDayView() {
  * Applies global frontend styling to every single tab in the spreadsheet.
  * Uses batch setBackgrounds() calls instead of per-row loops to stay within
  * Apps Script quota limits.
+ * @param {boolean} [silent=false] When true, suppresses the completion UI alert.
  */
-function styleEntireSheet() {
+function styleEntireSheet(silent) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheets = ss.getSheets();
 
@@ -165,7 +169,9 @@ function styleEntireSheet() {
     }
   });
 
-  SpreadsheetApp.getUi().alert('Global styling applied to all standard data tabs!');
+  if (!silent) {
+    SpreadsheetApp.getUi().alert('Global styling applied to all standard data tabs!');
+  }
 }
 
 /**
@@ -224,7 +230,7 @@ function setupInitialSpreadsheet() {
     }
   });
 
-  styleEntireSheet();
+  styleEntireSheet(/* silent= */ true);
 
   // Reorder sheets to the correct tab order
   reorderSheets();
