@@ -217,7 +217,7 @@ const ScheduleParser = {
     // Different subjects double-booked -> True Clash
     const clashDesc = slots.map(s => s.cls + ' (' + s.subject + ')').join(' / ');
     return {
-      display: '⚠️ CLASH: ' + clashDesc,
+      display: clashDesc,
       isFree: false,
       isCombined: false,
       isClash: true
