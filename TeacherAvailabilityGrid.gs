@@ -28,7 +28,7 @@ function generateTeacherAvailabilityGrid() {
   gridSheet.clear();
   
   // 1. Get Data
-  const teachers = DataAccess.getSheetDataAsObjects('Teachers').map(t => t['Teacher Name']).filter(t => t).sort();
+  const teachers = DataAccess.getSheetDataAsObjects('Teachers').map(t => t['Teacher Name']).filter(t => t);
   const scheduleData = DataAccess.getSheetDataAsObjects('Master_Schedule').filter(row => row.Day === day);
   const periods = [1, 2, 3, 4, 5, 6, 7, 8];
   

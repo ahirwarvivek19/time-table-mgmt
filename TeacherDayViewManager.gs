@@ -43,7 +43,7 @@ const TeacherDayViewManager = {
     const filterOptions = ['All Classes', ...classNames];
 
     const teachersData = DataAccess.getSheetDataAsObjects('Teachers');
-    const teacherNames = teachersData.map(t => t['Teacher Name']).filter(t => t).sort();
+    const teacherNames = teachersData.map(t => t['Teacher Name']).filter(t => t);
 
     // ── 2. TITLE BANNER (Rows 1–2) ────────────────────────────────────────
     sheet.getRange(1, 1, 2, numCols)
