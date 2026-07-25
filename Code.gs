@@ -17,7 +17,10 @@ function onOpen() {
     .addItem('Format Teacher Names (Title Case)', 'formatAllTeacherNames');
 
   const importMenu = ui.createMenu('📥 Data Import')
-    .addItem('Import Pre-fill Timetable Data', 'importExcelData')
+    .addItem('Import All Pre-fill Data', 'importExcelData')
+    .addItem('Import Static Teacher Registry', 'importTeachersData')
+    .addItem('Import Dynamic Schedule Data', 'importScheduleData')
+    .addSeparator()
     .addItem('Save Current Sheet as Pre-fill Data', 'saveCurrentSheetAsPrefillData')
     .addItem('Reset Pre-fill Data to Default', 'resetPrefillDataToDefault');
 

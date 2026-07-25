@@ -79,7 +79,9 @@ Timetable System
 │   ├── Reorder Spreadsheet Tabs           → reorderSheets()
 │   └── Format Teacher Names (Title Case)  → formatAllTeacherNames()
 └── 📥 Data Import ▶
-    ├── Import Pre-fill Timetable Data     → importExcelData()
+    ├── Import All Pre-fill Data           → importExcelData()
+    ├── Import Static Teacher Registry     → importTeachersData()
+    ├── Import Dynamic Schedule Data       → importScheduleData()
     ├── Save Current Sheet as Pre-fill Data→ saveCurrentSheetAsPrefillData()
     └── Reset Pre-fill Data to Default     → resetPrefillDataToDefault()
 ```
@@ -238,7 +240,9 @@ Custom view dashboards (`Class_View`, `Teacher_View`, `Teacher_Day_View`,
 | `openCoverManagerUI()` | `CoverManager.gs` | Launches the Cover Manager modal |
 | `apiGetAvailableTeachers(day, period)` | `CoverManager.gs` | Returns free teachers for a given slot |
 | `apiAssignCover(...)` | `CoverManager.gs` | Appends a cover assignment row to Cover_Manager sheet |
-| `importExcelData()` | `ImportData.gs` | Imports timetable data from prefill sheet |
+| `importExcelData()` | `ImportData.gs` | Imports all pre-fill data (teachers + schedule) |
+| `importTeachersData()` | `ImportData.gs` | Imports static teacher registry into Teachers tab |
+| `importScheduleData()` | `ImportData.gs` | Imports dynamic schedule into Master_Schedule tab |
 
 ---
 
