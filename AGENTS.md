@@ -344,8 +344,53 @@ Check the affected sheets to confirm the changes rendered correctly.
    continuation tokens or be split across multiple function calls.
 4. **Quota limits.** Google Sheets API has daily read/write quotas. Always prefer batch
    operations; see the Performance rules section above.
-5. **Tab order matters.** `reorderSheets()` enforces a canonical tab order after any
-   setup or refresh operation. Maintain this order when adding new sheets.
 6. **Cascade writes manually.** Programmatic `setValue()` / `setValues()` calls do NOT
    fire `onEdit`. Every write-back handler must explicitly re-render all other views after
    writing to Master_Schedule.
+
+---
+
+## Standard Operating Procedure (SOP): Excel to Pre-fill Data Import Workflow
+
+Use this exact 6-step workflow whenever importing or updating timetable schedule data from an external Excel file (e.g. `Copy of time Table 9-12 (2026-27) 9 F.xlsx`):
+
+### Step 1 — Sheet Inspection & Period Mapping
+1. Read the XLSX file using Node.js (`xlsx` npm package).
+2. Locate the timetable sheet and map the period columns:
+   - **Col 4**: Period 1 (10:40–11:30)
+   - **Col 5**: Period 2 (11:30–12:10)
+   - **Col 6**: Period 3 (12:10–12:50)
+   - **Col 7**: Period 4 (12:50–1:30)
+   - **Col 8**: Break (1:30–2:00)
+   - **Col 9**: Period 5 (2:00–2:40)
+   - **Col 10**: Period 6 (2:40–3:20)
+   - **Col 11**: Period 7 (3:20–4:00)
+   - **Col 12**: Period 8 (4:00–4:40)
+
+### Step 2 — Language & Encoding Decoding
+1. **Kruti Dev 010 Font Decoding**: Convert any Kruti Dev 010 ASCII text (e.g., `izkFkZuk`, `dky[k.M`) to standard Unicode Devanagari Hindi using the mapping dictionary.
+2. **Translation & Standardization**:
+   - Translate subject names into standard English titles (e.g. `राजनीति शास्त्र` → `Political Science`, `इतिहास` → `History`, `भौतिक शास्त्र` → `Physics`, `रसायनशास्त्र` → `Chemistry`, `गणित` → `Mathematics`, `जीवविज्ञान` → `Biology`, `लेखा शास्त्र` → `Accountancy`, `व्यवसायिक अध्ययन` → `Business Studies`, `अर्थशास्त्र` → `Economics`).
+   - Match raw Hindi teacher names (e.g. `श्री दिनेश भाटी`, `श्रीमती रोशनी सुमन`) against the 76-teacher Master Registry in `RAW_TEACHER_ROWS`.
+
+### Step 3 — Class & Section Normalization
+1. Identify all medium/section splits for the target class (e.g., `12th A`, `12th B`, `12th C (H)`, `12th C (E)`, `12th D`).
+2. Verify that all section names exist in `RAW_CLASS_ROWS` in `ImportData.gs`.
+
+### Step 4 — Master Teacher & Subject Validation
+1. Verify that **every extracted teacher** exists in `RAW_TEACHER_ROWS`.
+2. Check if any extracted subject is missing from `RAW_SUBJECT_ROWS`; add missing standard subjects if necessary.
+
+### Step 5 — User Review & Approval
+1. Generate formatted markdown tables (Section × Day × Period 1–8) displaying Subject & Teacher for all days (Monday to Saturday).
+2. **Present the full table in the chat for the user to review.**
+3. **STOP and wait for explicit user approval before modifying code or pushing.**
+
+### Step 6 — Codebase Update, Git & Clasp Deployment
+Once the user approves:
+1. Run script to update `RAW_SCHEDULE`, `RAW_CLASS_ROWS`, and `RAW_SUBJECT_ROWS` in `ImportData.gs`.
+2. Commit changes to Git (`git commit -m "feat: update class X timetable..."`).
+3. Push to GitHub (`git push origin master`).
+4. Deploy to Apps Script (`npx clasp push`).
+5. Prompt user to reload Google Sheet and execute **📥 Data Import ▶ Import Dynamic Schedule Data** and **🔄 Refresh All Views**.
+
