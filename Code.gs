@@ -6,29 +6,29 @@
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu('Timetable System')
-    .addItem('📋 Open Multi-Select Picker Sidebar', 'openMultiSelectSidebar')
-    .addItem('🔄 Refresh All Timetable Views & Tabs', 'refreshAllViews')
-    .addSeparator()
-    .addItem('Check For Conflicts', 'runValidation')
-    .addItem('Generate Master Grid View', 'generateMasterGrid')
-    .addSeparator()
-    .addItem('Initialize / Refresh Class View', 'initClassView')
-    .addItem('Initialize / Refresh Teacher View', 'initTeacherView')
-    .addItem('Initialize / Refresh Day-wise Teacher View', 'initTeacherDayView')
-    .addSeparator()
-    .addItem('View Teacher Free Slots', 'generateTeacherAvailabilityGrid')
-    .addItem('Launch Cover Manager UI', 'openCoverManagerUI')
-    .addSeparator()
+
+  const setupMenu = ui.createMenu('⚙️ Setup & Utilities')
     .addItem('Setup Spreadsheets (Run Once)', 'setupInitialSpreadsheet')
+    .addItem('Generate Master Grid (Full Restyle)', 'generateMasterGrid')
+    .addSeparator()
     .addItem('Apply Master Schedule Dropdowns', 'applyMasterScheduleDropdowns')
     .addItem('Apply Global Styling', 'styleEntireSheet')
-    .addItem('🗂️ Reorder Spreadsheet Tabs', 'reorderSheets')
-    .addItem('✏️ Format Teacher Names (Title Case)', 'formatAllTeacherNames')
+    .addItem('Reorder Spreadsheet Tabs', 'reorderSheets')
+    .addItem('Format Teacher Names (Title Case)', 'formatAllTeacherNames');
+
+  const importMenu = ui.createMenu('📥 Data Import')
+    .addItem('Import Pre-fill Timetable Data', 'importExcelData')
+    .addItem('Save Current Sheet as Pre-fill Data', 'saveCurrentSheetAsPrefillData')
+    .addItem('Reset Pre-fill Data to Default', 'resetPrefillDataToDefault');
+
+  ui.createMenu('Timetable System')
+    .addItem('🔄 Refresh All Views', 'refreshAllViews')
+    .addItem('✅ Check For Conflicts', 'runValidation')
+    .addItem('📊 Teacher Availability', 'generateTeacherAvailabilityGrid')
+    .addItem('👥 Cover Manager', 'openCoverManagerUI')
     .addSeparator()
-    .addItem('💾 Save Current Sheet as Pre-fill Data', 'saveCurrentSheetAsPrefillData')
-    .addItem('📥 Import Pre-fill Timetable Data', 'importExcelData')
-    .addItem('🔄 Reset Pre-fill Data to Default', 'resetPrefillDataToDefault')
+    .addSubMenu(setupMenu)
+    .addSubMenu(importMenu)
     .addToUi();
 }
 

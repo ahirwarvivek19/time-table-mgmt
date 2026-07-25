@@ -32,14 +32,16 @@ const ScheduleParser = {
   },
 
   /**
-   * Splits a string by common delimiters (/, comma, newline, pipe).
+   * Splits a teachers/subjects string by the canonical delimiter "/" or fallback ",", newline, pipe.
+   * Canonical write format is always "/" (e.g. "Mrs. X / Mr. Y" or "Hindi / IP").
+   * Comma is accepted on input for robustness but is NOT used when writing back.
    * @param {string} str
    * @returns {Array<string>}
    */
   splitList: function(str) {
     if (!str) return [];
     return String(str)
-      .split(/[\/\n\|]/)
+      .split(/[\/,\n\|]/)
       .map(s => s.trim())
       .filter(s => s.length > 0);
   },

@@ -88,21 +88,51 @@ function generateTeacherAvailabilityGrid() {
            .setFontColor('#FFFFFF')
            .setFontWeight('bold');
 
-  // Body Colors (Green for FREE, Light Gray for BUSY)
-  for (let r = 2; r <= numRows; r++) {
-    for (let c = 2; c <= numCols; c++) {
-      const cellValue = gridOutput[r-1][c-1];
-      const cell = gridSheet.getRange(r, c);
-      if (cellValue === 'FREE') {
-        cell.setBackground('#E8F8F5').setFontColor('#27AE60').setFontWeight('bold'); // Soft Green
-      } else {
-        cell.setBackground('#F8F9FA').setFontColor('#7F8C8D'); // Gray out busy slots
+  // Body Colors (GREEN for FREE, muted gray for BUSY) — batched to respect quota
+  if (numRows > 1) {
+    const bgColors   = [];
+    const fontColors = [];
+    const fontWeights = [];
+
+    for (let r = 1; r < numRows; r++) { // skip header row
+      const rowBg     = [];
+      const rowFont   = [];
+      const rowWeight = [];
+
+      // Teacher label column (col 1) — handled separately below
+      rowBg.push(null);     // placeholder; teacher col styled below
+      rowFont.push(null);
+      rowWeight.push(null);
+
+      for (let c = 1; c < numCols; c++) { // period cols
+        const cellValue = gridOutput[r][c];
+        if (cellValue === 'FREE') {
+          rowBg.push('#E8F8F5');
+          rowFont.push('#27AE60');
+          rowWeight.push('bold');
+        } else {
+          rowBg.push('#F8F9FA');
+          rowFont.push('#7F8C8D');
+          rowWeight.push('normal');
+        }
       }
+      bgColors.push(rowBg);
+      fontColors.push(rowFont);
+      fontWeights.push(rowWeight);
     }
+
+    // Apply period columns in one batch (cols 2 onward)
+    const periodBodyRange = gridSheet.getRange(2, 2, numRows - 1, numCols - 1);
+    periodBodyRange.setBackgrounds(bgColors.map(r => r.slice(1)));
+    periodBodyRange.setFontColors(fontColors.map(r => r.slice(1)));
+    periodBodyRange.setFontWeights(fontWeights.map(r => r.slice(1)));
   }
 
-  // Teacher Column
-  gridSheet.getRange(2, 1, numRows - 1, 1).setBackground('#34495E').setFontColor('#FFFFFF').setFontWeight('bold');
+  // Teacher Column — single batch call
+  gridSheet.getRange(2, 1, numRows - 1, 1)
+           .setBackground('#34495E')
+           .setFontColor('#FFFFFF')
+           .setFontWeight('bold');
 
   // Borders & Resize
   dataRange.setBorder(true, true, true, true, true, true, '#BDC3C7', SpreadsheetApp.BorderStyle.SOLID);
