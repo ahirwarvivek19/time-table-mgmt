@@ -1,4 +1,4 @@
-﻿# AGENTS.md — Time Table Management System
+# AGENTS.md — Time Table Management System
 
 ## Project Overview
 
@@ -96,7 +96,6 @@ The bound spreadsheet must contain these tabs (created by `setupInitialSpreadshe
 | `Teachers` | Teacher Name, Subject Specialization, Max Hours / Week, Days Unavailable, Total Hours Scheduled |
 | `Subjects` | Subject Name |
 | `Classes` | Class Name, Academic Tier, Room Assigned |
-| `Rooms` | Room Name, Capacity, Specialized Type |
 | `Master_Schedule` | Day, Period, Class, Academic Tier, Subject, Teacher, Room, Clash Status |
 
 ### Dashboard Tabs
@@ -285,6 +284,38 @@ npx clasp open
 ### Deployment (Triggers)
 The `onEdit` trigger must be set as an **installable trigger** in the Apps Script dashboard
 (not just a simple trigger) for write-back logic to work reliably.
+
+---
+
+## Post-Deploy Checklist (After Every `clasp push`)
+
+> **Rule for AI agents:** After every `clasp push`, always tell the user which menu
+> items to run from the **Timetable System** dropdown in Google Sheets to activate the
+> changes. New code is not live until the spreadsheet reloads and the relevant functions
+> are executed.
+
+### Step 1 — Reload the spreadsheet
+Close and reopen the Google Sheet (or hard-refresh the browser tab) so the new script
+version is picked up and the menu rebuilds.
+
+### Step 2 — Run the appropriate menu items
+
+| What changed | Menu item(s) to run |
+|---|---|
+| Any view manager (`ClassViewManager`, `TeacherViewManager`, etc.) | **🔄 Refresh All Views** |
+| `Code.gs` menu / `onOpen` | Reload the sheet (menu rebuilds automatically) |
+| `setupInitialSpreadsheet` / sheet structure | **⚙️ Setup & Utilities → Setup Spreadsheets (Run Once)** |
+| `reorderSheets` / tab order | **⚙️ Setup & Utilities → Reorder Spreadsheet Tabs** |
+| `styleEntireSheet` / global styling | **⚙️ Setup & Utilities → Apply Global Styling** |
+| `applyMasterScheduleDropdowns` / dropdowns | **⚙️ Setup & Utilities → Apply Master Schedule Dropdowns** |
+| `generateMasterGrid` / Master Grid styling | **⚙️ Setup & Utilities → Generate Master Grid (Full Restyle)** |
+| `runValidation` / clash detection | **✅ Check For Conflicts** |
+| `EventHandlers` / sync logic | No menu needed — takes effect immediately on next edit |
+| `ScheduleParser` / parsing logic | No menu needed — takes effect immediately |
+| Import / pre-fill data | **📥 Data Import → Import Pre-fill Timetable Data** |
+
+### Step 3 — Verify
+Check the affected sheets to confirm the changes rendered correctly.
 
 ---
 

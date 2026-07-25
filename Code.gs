@@ -73,7 +73,7 @@ function refreshAllViews() {
   // 5. Refresh Master Grid View Data
   refreshMasterGridData_();
 
-  // 6. Reorder tabs (Teachers, Subjects, Classes, Rooms, Master_Schedule, then all Views)
+  // 6. Reorder tabs (Teachers, Subjects, Classes, Master_Schedule, then all Views)
   reorderSheets();
 
   // 7. Style entire sheet
@@ -186,10 +186,6 @@ function setupInitialSpreadsheet() {
       headers: ['Class Name', 'Academic Tier', 'Room Assigned']
     },
     {
-      name: 'Rooms',
-      headers: ['Room Name', 'Capacity', 'Specialized Type']
-    },
-    {
       name: 'Master_Schedule',
       headers: ['Day', 'Period', 'Class', 'Academic Tier', 'Subject', 'Teacher', 'Room', 'Clash Status']
     },
@@ -246,7 +242,7 @@ function setupInitialSpreadsheet() {
 
   SpreadsheetApp.getUi().alert(
     'Setup Complete!\n' +
-    'Tabs created: Teachers, Subjects, Classes, Rooms, Master_Schedule, Class_View, Teacher_View, Cover_Manager.\n\n' +
+    'Tabs created: Teachers, Subjects, Classes, Master_Schedule, Class_View, Teacher_View, Teacher_Day_View, Cover_Manager.\n\n' +
     'Next step: run \'Import Timetable Data\' from the menu to load all data.'
   );
 }
@@ -340,7 +336,7 @@ function applyMasterScheduleDropdowns_(silent) {
 }
 
 /**
- * Reorders the spreadsheet tabs: Teachers, Subjects, Classes, Rooms, Master_Schedule, followed by all Views.
+ * Reorders the spreadsheet tabs: Teachers, Subjects, Classes, Master_Schedule, followed by all Views.
  * Public menu entry point.
  */
 function reorderSheets() {
@@ -349,7 +345,6 @@ function reorderSheets() {
     'Teachers',
     'Subjects',
     'Classes',
-    'Rooms',
     'Master_Schedule',
     'Class_View',
     'Teacher_View',
