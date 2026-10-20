@@ -7,139 +7,116 @@ function generateTeacherAvailabilityGrid() {
   const ui = SpreadsheetApp.getUi();
   const response = ui.prompt(
     'Teacher Availability Grid',
-    'Which day do you want to check? (e.g., Monday, Tuesday)',
+    'Which day do you want to check? (' + CONFIG.DAYS.join(', ') + ')',
     ui.ButtonSet.OK_CANCEL
   );
+  if (response.getSelectedButton() !== ui.Button.OK) return;
 
-  if (response.getSelectedButton() !== ui.Button.OK) {
+  // "monday", "Mon", " MONDAY " all work; anything else is rejected instead of
+  // silently showing every teacher as FREE.
+  const day = normalizeDay_(response.getResponseText());
+  if (!day) {
+    ui.alert('Please enter a school day: ' + CONFIG.DAYS.join(', ') + '.');
     return;
   }
-  
-  const day = response.getResponseText().trim();
-  if (!day) return;
+  renderTeacherAvailabilityGrid_(day);
+}
 
+/**
+ * Renders Teacher_Availability_Grid for one day.
+ * @param {string} day  Canonical day name, e.g. "Monday"
+ */
+function renderTeacherAvailabilityGrid_(day) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let gridSheet = ss.getSheetByName('Teacher_Availability_Grid');
-  
-  if (!gridSheet) {
-    gridSheet = ss.insertSheet('Teacher_Availability_Grid');
-  }
-  
+  let gridSheet = ss.getSheetByName(CONFIG.SHEETS.AVAILABILITY);
+  if (!gridSheet) gridSheet = ss.insertSheet(CONFIG.SHEETS.AVAILABILITY);
   gridSheet.clear();
-  
-  // 1. Get Data
-  const teachers = DataAccess.getSheetDataAsObjects('Teachers').map(t => t['Teacher Name']).filter(t => t);
-  const scheduleData = DataAccess.getSheetDataAsObjects('Master_Schedule').filter(row => row.Day === day);
-  const periods = [1, 2, 3, 4, 5, 6, 7, 8];
-  
+
+  const teachersData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.TEACHERS);
+  const teachers = getTeacherNames_();
   if (teachers.length === 0) {
-    ui.alert('No teachers found in the Teachers tab.');
+    SpreadsheetApp.getUi().alert('No teachers found in the Teachers tab.');
     return;
   }
+  const scheduleData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE).filter(row => row.Day === day);
+  const periods = CONFIG.PERIODS;
+  const UNAVAILABLE = 'UNAVAILABLE';
 
-  // 2. Build Lookup
-  // lookup[teacher][period] = "Busy (Class Name)" or "FREE"
+  // lookup[normalized teacher][period] = "FREE" | "BUSY (classes)" | "UNAVAILABLE"
   const lookup = {};
   teachers.forEach(t => {
-    lookup[t] = {};
-    periods.forEach(p => lookup[t][p] = 'FREE'); // Default FREE
+    const key = ScheduleParser.normalizeName(t);
+    const record = teachersData.find(r => ScheduleParser.sameName(r['Teacher Name'], t)) || {};
+    const offDays = String(record['Days Unavailable'] || '').split(/[,\/;]/).map(normalizeDay_);
+    lookup[key] = {};
+    periods.forEach(p => lookup[key][p] = offDays.indexOf(day) !== -1 ? UNAVAILABLE : CONFIG.FREE);
   });
-  
+
+  const busy = {}; // key|period → [classes]
   scheduleData.forEach(row => {
-    if (!row.Period) return;
     const p = parseInt(row.Period);
-    const assignments = ScheduleParser.parseRowAssignments(row);
-    assignments.forEach(assign => {
-      if (assign.teacher && lookup[assign.teacher] && lookup[assign.teacher][p]) {
-        lookup[assign.teacher][p] = `BUSY (${row.Class})`;
-      }
+    if (!row.Period || periods.indexOf(p) === -1) return;
+    ScheduleParser.parseRowAssignments(row).forEach(assign => {
+      const key = ScheduleParser.normalizeName(assign.teacher);
+      if (!key || !lookup[key]) return;
+      const k = key + '|' + p;
+      (busy[k] = busy[k] || []).push(String(row.Class));
     });
   });
+  Object.keys(busy).forEach(k => {
+    const [key, p] = k.split('|');
+    lookup[key][p] = 'BUSY (' + [...new Set(busy[k])].join(', ') + ')';
+  });
 
-  // 3. Build Output Array
-  const gridOutput = [];
-  const headers = [`Teacher (${day})`, 'Period 1', 'Period 2', 'Period 3', 'Period 4', 'Period 5', 'Period 6', 'Period 7', 'Period 8'];
-  gridOutput.push(headers);
-  
+  // Build output
+  const headers = ['Teacher (' + day + ')'].concat(periods.map(periodHeader_));
+  const gridOutput = [headers];
   teachers.forEach(t => {
-    const rowOutput = [t];
-    periods.forEach(p => {
-      rowOutput.push(lookup[t][p]);
-    });
-    gridOutput.push(rowOutput);
+    const key = ScheduleParser.normalizeName(t);
+    gridOutput.push([t].concat(periods.map(p => lookup[key][p])));
   });
 
-  // 4. Write Data
   const numRows = gridOutput.length;
   const numCols = headers.length;
   const dataRange = gridSheet.getRange(1, 1, numRows, numCols);
   dataRange.setValues(gridOutput);
 
-  // 5. Styling
+  // Styling
   gridSheet.setHiddenGridlines(true);
   gridSheet.setFrozenRows(1);
   gridSheet.setFrozenColumns(1);
-  
-  dataRange.setFontFamily('Montserrat').setVerticalAlignment('middle').setHorizontalAlignment('center');
-  
-  // Header
+  dataRange.setFontFamily(CONFIG.FONT).setVerticalAlignment('middle').setHorizontalAlignment('center').setWrap(true);
+
   gridSheet.getRange(1, 1, 1, numCols)
            .setBackground('#2C3E50')
            .setFontColor('#FFFFFF')
            .setFontWeight('bold');
 
-  // Body Colors (GREEN for FREE, muted gray for BUSY) — batched to respect quota
-  if (numRows > 1) {
-    const bgColors   = [];
-    const fontColors = [];
-    const fontWeights = [];
-
-    for (let r = 1; r < numRows; r++) { // skip header row
-      const rowBg     = [];
-      const rowFont   = [];
-      const rowWeight = [];
-
-      // Teacher label column (col 1) — handled separately below
-      rowBg.push(null);     // placeholder; teacher col styled below
-      rowFont.push(null);
-      rowWeight.push(null);
-
-      for (let c = 1; c < numCols; c++) { // period cols
-        const cellValue = gridOutput[r][c];
-        if (cellValue === 'FREE') {
-          rowBg.push('#E8F8F5');
-          rowFont.push('#27AE60');
-          rowWeight.push('bold');
-        } else {
-          rowBg.push('#F8F9FA');
-          rowFont.push('#7F8C8D');
-          rowWeight.push('normal');
-        }
-      }
-      bgColors.push(rowBg);
-      fontColors.push(rowFont);
-      fontWeights.push(rowWeight);
+  // Body colours: GREEN = free, grey = busy, amber = unavailable (batched)
+  const bg = [], fc = [], fw = [];
+  for (let r = 1; r < numRows; r++) {
+    const rowBg = [], rowFont = [], rowWeight = [];
+    for (let c = 1; c < numCols; c++) {
+      const v = gridOutput[r][c];
+      if (v === CONFIG.FREE) { rowBg.push('#E8F8F5'); rowFont.push('#27AE60'); rowWeight.push('bold'); }
+      else if (v === UNAVAILABLE) { rowBg.push('#FEF5E7'); rowFont.push('#B9770E'); rowWeight.push('bold'); }
+      else { rowBg.push('#F8F9FA'); rowFont.push('#7F8C8D'); rowWeight.push('normal'); }
     }
-
-    // Apply period columns in one batch (cols 2 onward)
-    const periodBodyRange = gridSheet.getRange(2, 2, numRows - 1, numCols - 1);
-    periodBodyRange.setBackgrounds(bgColors.map(r => r.slice(1)));
-    periodBodyRange.setFontColors(fontColors.map(r => r.slice(1)));
-    periodBodyRange.setFontWeights(fontWeights.map(r => r.slice(1)));
+    bg.push(rowBg); fc.push(rowFont); fw.push(rowWeight);
   }
+  const periodBody = gridSheet.getRange(2, 2, numRows - 1, numCols - 1);
+  periodBody.setBackgrounds(bg);
+  periodBody.setFontColors(fc);
+  periodBody.setFontWeights(fw);
 
-  // Teacher Column — single batch call
   gridSheet.getRange(2, 1, numRows - 1, 1)
            .setBackground('#34495E')
            .setFontColor('#FFFFFF')
            .setFontWeight('bold');
 
-  // Borders & Resize
   dataRange.setBorder(true, true, true, true, true, true, '#BDC3C7', SpreadsheetApp.BorderStyle.SOLID);
   gridSheet.setColumnWidth(1, 180);
-  for(let i=2; i<=numCols; i++) {
-    gridSheet.setColumnWidth(i, 120);
-  }
-  
+  for (let i = 2; i <= numCols; i++) gridSheet.setColumnWidth(i, 120);
+
   ss.setActiveSheet(gridSheet);
 }

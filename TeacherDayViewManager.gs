@@ -1,6 +1,6 @@
 /**
  * TeacherDayViewManager.gs
- * Renders a read-only matrix view for ALL teachers for a specific selected Day and Class filter.
+ * Renders an editable matrix view for ALL teachers for a specific selected Day and Class filter.
  * Supports combined lectures across multiple classes for optional subjects (e.g. 11th A, 11th B - IP).
  */
 
@@ -12,38 +12,34 @@ const TeacherDayViewManager = {
    * @param {string} [selectedClass] e.g. 'All Classes' or '11th A, 11th B'
    */
   renderTeacherDayView: function(selectedDay, selectedClass) {
-    const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    if (!selectedDay || !validDays.includes(selectedDay)) {
-      selectedDay = 'Monday';
-    }
+    const validDays = CONFIG.DAYS;
+    selectedDay = normalizeDay_(selectedDay) || validDays[0];
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName('Teacher_Day_View');
-    if (!sheet) sheet = ss.insertSheet('Teacher_Day_View');
+    let sheet = ss.getSheetByName(CONFIG.SHEETS.TEACHER_DAY_VIEW);
+    if (!sheet) sheet = ss.insertSheet(CONFIG.SHEETS.TEACHER_DAY_VIEW);
 
     // Preserve previous selections if not passed explicitly
     if (!selectedClass && sheet.getLastRow() >= 3) {
       selectedClass = sheet.getRange('E3').getValue();
     }
-    if (!selectedClass) selectedClass = 'All Classes';
+    if (!selectedClass) selectedClass = CONFIG.ALL_CLASSES;
 
-    sheet.clear();
-    sheet.getDataRange().breakApart();
     sheet.setFrozenRows(0);
     sheet.setFrozenColumns(0);
+    sheet.clear();
+    sheet.getDataRange().breakApart();
     sheet.setHiddenGridlines(true);
 
-    const periods = [1, 2, 3, 4, 5, 6, 7, 8];
-    const numCols = 9; // Teacher col + 8 periods
+    const periods = CONFIG.PERIODS;
+    const numCols = periods.length + 1; // Teacher col + periods
     const startRow = 5;
 
     // ── 1. FETCH CLASSES & TEACHERS DATA ──────────────────────────────────
-    const classesData = DataAccess.getSheetDataAsObjects('Classes');
-    const classNames = classesData.map(c => c['Class Name']).filter(c => c).sort();
-    const filterOptions = ['All Classes', ...classNames];
+    const classNames = getClassNames_(); // Classes sheet order (6th … 12th)
+    const filterOptions = [CONFIG.ALL_CLASSES, ...classNames];
 
-    const teachersData = DataAccess.getSheetDataAsObjects('Teachers');
-    const teacherNames = teachersData.map(t => t['Teacher Name']).filter(t => t);
+    const teacherNames = getTeacherNames_();
 
     // ── 2. TITLE BANNER (Rows 1–2) ────────────────────────────────────────
     sheet.getRange(1, 1, 2, numCols)
@@ -51,7 +47,7 @@ const TeacherDayViewManager = {
          .setFontFamily('Montserrat');
     sheet.getRange(1, 2, 2, numCols - 1)
          .merge()
-         .setValue('📅  Day-Wise Teacher Schedule  ·  ' + selectedDay + (selectedClass !== 'All Classes' ? ' (' + selectedClass + ')' : ''))
+         .setValue('📅  Day-Wise Teacher Schedule  ·  ' + selectedDay + (selectedClass !== CONFIG.ALL_CLASSES ? ' (' + selectedClass + ')' : ''))
          .setFontFamily('Montserrat')
          .setFontSize(16)
          .setFontWeight('bold')
@@ -108,30 +104,32 @@ const TeacherDayViewManager = {
     }
 
     // ── 4. FETCH SCHEDULE DATA ────────────────────────────────────────────
-    const scheduleData = DataAccess.getSheetDataAsObjects('Master_Schedule')
+    const scheduleData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE)
       .filter(r => r.Day === selectedDay);
 
-    // Build lookup: lookup[teacher][period] = Array of { cls, subject }
+    // Build lookup: lookup[normalized teacher][period] = Array of { cls, subject }
     const lookup = {};
     teacherNames.forEach(t => {
-      lookup[t] = {};
-      periods.forEach(p => lookup[t][p] = []);
+      const key = ScheduleParser.normalizeName(t);
+      lookup[key] = {};
+      periods.forEach(p => lookup[key][p] = []);
     });
 
     scheduleData.forEach(row => {
       if (!row.Period) return;
       const period = parseInt(row.Period);
-      if (isNaN(period) || period < 1 || period > 8) return;
+      if (isNaN(period) || periods.indexOf(period) === -1) return;
 
       // Filter by Class selection if specific class requested
-      if (selectedClass !== 'All Classes' && !ScheduleParser.rowIncludesClass(row, selectedClass)) {
+      if (selectedClass !== CONFIG.ALL_CLASSES && !ScheduleParser.rowIncludesClass(row, selectedClass)) {
         return;
       }
 
       const assignments = ScheduleParser.parseRowAssignments(row);
       assignments.forEach(assign => {
-        if (assign.teacher && lookup[assign.teacher] && lookup[assign.teacher][period]) {
-          lookup[assign.teacher][period].push({
+        const key = ScheduleParser.normalizeName(assign.teacher);
+        if (key && lookup[key] && lookup[key][period]) {
+          lookup[key][period].push({
             cls: row.Class || '',
             subject: assign.subject || row.Subject || ''
           });
@@ -140,8 +138,7 @@ const TeacherDayViewManager = {
     });
 
     // ── 5. BUILD GRID OUTPUT ──────────────────────────────────────────────
-    const headers = ['Teacher / Period', 'Period 1', 'Period 2', 'Period 3',
-                     'Period 4', 'Period 5', 'Period 6', 'Period 7', 'Period 8'];
+    const headers = ['Teacher / Period'].concat(periods.map(periodHeader_));
     const gridOutput = [headers];
     const metadataGrid = []; // Stores { isFree, isCombined, isClash } per cell
 
@@ -150,7 +147,7 @@ const TeacherDayViewManager = {
       const metaRow = [{ isFree: false, isCombined: false, isClash: false }];
 
       periods.forEach(period => {
-        const slots = lookup[teacher][period];
+        const slots = lookup[ScheduleParser.normalizeName(teacher)][period];
         const grouped = ScheduleParser.groupTeacherSlots(slots);
         row.push(grouped.display);
         metaRow.push(grouped);
@@ -248,70 +245,10 @@ const TeacherDayViewManager = {
    * @param {string} teacherName
    * @param {number} period
    * @param {string} newValue
+   * @returns {string} '' on success, otherwise why the edit was not saved
    */
   updateMasterFromTeacherDayView: function(selectedDay, teacherName, period, newValue) {
-    if (!selectedDay || !teacherName || !period) return;
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const msSheet = ss.getSheetByName('Master_Schedule');
-    if (!msSheet) return;
-
-    const dataRange = msSheet.getDataRange();
-    const values = dataRange.getValues();
-    const cleanValue = String(newValue || '').trim();
-
-    // If setting to FREE or empty: unassign teacher from this slot
-    if (!cleanValue || cleanValue.toUpperCase() === 'FREE') {
-      for (let i = 1; i < values.length; i++) {
-        if (values[i][0] === selectedDay && values[i][1] == period) {
-          const rowObj = { Teacher: values[i][5], Subject: values[i][4] };
-          if (ScheduleParser.rowIncludesTeacher(rowObj, teacherName)) {
-            const teachers = ScheduleParser.splitList(values[i][5]);
-            const updatedTeachers = teachers.filter(t => t.toLowerCase() !== teacherName.toLowerCase());
-            msSheet.getRange(i + 1, 6).setValue(updatedTeachers.join(' / '));
-          }
-        }
-      }
-      return;
-    }
-
-    // Parse Class and Subject from typed value e.g. "6th A - English" or "6th A"
-    let targetClass = cleanValue;
-    let targetSubject = '';
-
-    if (cleanValue.includes(' - ')) {
-      const parts = cleanValue.split(' - ');
-      targetClass = parts[0].trim();
-      targetSubject = parts.slice(1).join(' - ').trim();
-    }
-
-    // Look for existing row matching Day, Period, Class
-    let rowIndexToUpdate = -1;
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][0] === selectedDay && values[i][1] == period && ScheduleParser.rowIncludesClass({ Class: values[i][2] }, targetClass)) {
-        rowIndexToUpdate = i + 1;
-        break;
-      }
-    }
-
-    if (rowIndexToUpdate > 0) {
-      // Update existing row's Teacher field (append or set)
-      const existingTeacherStr = values[rowIndexToUpdate - 1][5] || '';
-      const existingTeachers = ScheduleParser.splitList(existingTeacherStr);
-      if (!existingTeachers.some(t => t.toLowerCase() === teacherName.toLowerCase())) {
-        const updatedTeachers = existingTeacherStr ? existingTeacherStr + ' / ' + teacherName : teacherName;
-        msSheet.getRange(rowIndexToUpdate, 6).setValue(updatedTeachers);
-      }
-      if (targetSubject) {
-        msSheet.getRange(rowIndexToUpdate, 5).setValue(targetSubject);
-      }
-    } else {
-      // Create new row in Master_Schedule
-      const classes = DataAccess.getSheetDataAsObjects('Classes');
-      const classData = classes.find(c => c['Class Name'] === targetClass);
-      const tier = classData ? classData['Academic Tier'] : '';
-      const room = classData ? classData['Room Assigned'] : '';
-      msSheet.appendRow([selectedDay, period, targetClass, tier, targetSubject, teacherName, room, '']);
-    }
+    // Same rules as Teacher_View ("Class - Subject", "FREE", combined "11th A, 11th B - IP")
+    return updateTeacherSlot_(teacherName, normalizeDay_(selectedDay), period, newValue);
   }
 };

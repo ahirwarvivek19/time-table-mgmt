@@ -8,6 +8,9 @@ package-lock.json
 # Scratch/temp files
 scratch/
 
+# Local timetable preview output (npm run preview); anchored so tools/preview/ stays tracked
+/preview/
+
 # OS files
 .DS_Store
 Thumbs.db

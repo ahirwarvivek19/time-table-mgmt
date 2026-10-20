@@ -1,9 +1,13 @@
 node_modules/**
-gen.js
 package.json
 package-lock.json
+tools/**
+tests/**
+docs/**
 scratch/**
+preview/**
 *.xlsx
+*.md
 .vscode/**
-MultiSelectManager.gs
-MultiSelectUI.html
+templates/**
+*.csv

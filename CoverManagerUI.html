@@ -8,216 +8,204 @@
         --primary: #2C3E50;
         --secondary: #34495E;
         --accent: #3498DB;
-        --success: #2ECC71;
+        --success: #27AE60;
+        --danger: #C0392B;
         --bg: #F8F9FA;
         --text: #333333;
         --border: #BDC3C7;
       }
-      body {
-        font-family: 'Montserrat', sans-serif;
-        background-color: var(--bg);
-        color: var(--text);
-        margin: 0;
-        padding: 20px;
-      }
-      h2 {
-        color: var(--primary);
-        margin-top: 0;
-        border-bottom: 2px solid var(--border);
-        padding-bottom: 10px;
-      }
-      .form-group {
-        margin-bottom: 20px;
-      }
-      label {
-        display: block;
-        font-weight: 600;
-        margin-bottom: 5px;
-        color: var(--secondary);
-      }
-      select, input[type="date"] {
-        width: 100%;
-        padding: 10px;
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        font-family: 'Montserrat', sans-serif;
-        font-size: 14px;
-      }
-      .card {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      }
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 10px;
-        margin-bottom: 10px;
-      }
-      .period-badge {
-        background: var(--primary);
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-weight: 600;
-        font-size: 12px;
-      }
-      .btn {
-        background: var(--accent);
-        color: white;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 600;
-        transition: background 0.2s;
-        font-family: 'Montserrat', sans-serif;
-      }
-      .btn:hover { background: #2980B9; }
-      .btn-success { background: var(--success); }
-      .btn-success:hover { background: #27AE60; }
-      .loader {
-        display: none;
-        color: var(--accent);
-        font-weight: bold;
-        margin-top: 10px;
-      }
-      #schedule-container {
-        margin-top: 20px;
-      }
+      body { font-family: 'Montserrat', Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+      h2 { color: var(--primary); margin-top: 0; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+      .row { display: flex; gap: 12px; }
+      .row .form-group { flex: 1; }
+      .form-group { margin-bottom: 16px; }
+      label { display: block; font-weight: 600; margin-bottom: 5px; color: var(--secondary); }
+      select, input[type="date"] { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; }
+      .day-pill { display: inline-block; padding: 9px 12px; border-radius: 4px; background: #EBF5FB; color: #1A5276; font-weight: 600; min-width: 120px; }
+      .card { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+      .card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+      .period-badge { background: var(--primary); color: white; padding: 4px 8px; border-radius: 4px; font-weight: 600; font-size: 12px; }
+      .actions { display: flex; gap: 10px; }
+      .actions select { flex-grow: 1; }
+      .btn { background: var(--success); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+      .btn:disabled { background: #95A5A6; cursor: default; }
+      .muted { color: #7F8C8D; }
+      .ok { color: var(--success); font-weight: 600; }
+      .error { color: var(--danger); font-weight: 600; margin: 8px 0; }
+      .covered { border-left: 4px solid var(--success); }
+      table { border-collapse: collapse; width: 100%; font-size: 13px; }
+      th, td { border: 1px solid var(--border); padding: 6px; text-align: left; }
+      th { background: var(--primary); color: white; }
     </style>
   </head>
   <body>
-
     <h2>Daily Arrangement (Cover Manager)</h2>
-    
-    <div class="form-group">
-      <label for="date-select">Select Date</label>
-      <input type="date" id="date-select">
+
+    <div class="row">
+      <div class="form-group">
+        <label for="date-select">Date</label>
+        <input type="date" id="date-select">
+      </div>
+      <div class="form-group">
+        <label>Timetable day</label>
+        <span class="day-pill" id="day-label">—</span>
+      </div>
     </div>
 
     <div class="form-group">
-      <label for="day-select">Timetable Day to Match</label>
-      <select id="day-select">
-        <option value="">-- Select Day --</option>
-        <option value="Monday">Monday</option>
-        <option value="Tuesday">Tuesday</option>
-        <option value="Wednesday">Wednesday</option>
-        <option value="Thursday">Thursday</option>
-        <option value="Friday">Friday</option>
-        <option value="Saturday">Saturday</option>
+      <label for="teacher-select">Absent teacher</label>
+      <select id="teacher-select">
+        <option value="">Loading teachers…</option>
       </select>
     </div>
 
-    <div class="form-group">
-      <label for="teacher-select">Absent Teacher</label>
-      <select id="teacher-select" onchange="loadSchedule()">
-        <option value="">-- Loading Teachers --</option>
-      </select>
-    </div>
-
-    <div id="loader" class="loader">Loading data...</div>
-    <div id="schedule-container"></div>
+    <div id="message" class="error" role="alert"></div>
+    <div id="schedule-container" aria-live="polite"></div>
+    <div id="existing-container"></div>
 
     <script>
-      // On Load
-      window.onload = function() {
-        // Set today's date
-        document.getElementById('date-select').valueAsDate = new Date();
-        
-        // Fetch teachers
-        google.script.run.withSuccessHandler(populateTeachers).apiGetTeachers();
+      var state = { day: '', covers: [] };
+
+      function $(id) { return document.getElementById(id); }
+      function el(tag, attrs, text) {
+        var node = document.createElement(tag);
+        Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+        if (text !== undefined) node.textContent = text; // textContent: names are never parsed as HTML
+        return node;
+      }
+      function showError(err) { $('message').textContent = (err && err.message) ? err.message : String(err || ''); }
+      function clearError() { $('message').textContent = ''; }
+      function call(fnName, args, onOk) {
+        var runner = google.script.run.withSuccessHandler(onOk).withFailureHandler(showError);
+        runner[fnName].apply(runner, args);
+      }
+      function localIsoDate(d) {
+        var m = String(d.getMonth() + 1), day = String(d.getDate());
+        return d.getFullYear() + '-' + (m.length < 2 ? '0' + m : m) + '-' + (day.length < 2 ? '0' + day : day);
+      }
+
+      window.onload = function () {
+        $('date-select').value = localIsoDate(new Date());
+        $('date-select').addEventListener('change', onDateChange);
+        $('teacher-select').addEventListener('change', loadSchedule);
+        call('apiGetTeachers', [], populateTeachers);
+        onDateChange();
       };
 
       function populateTeachers(teachers) {
-        const select = document.getElementById('teacher-select');
-        select.innerHTML = '<option value="">-- Select Absent Teacher --</option>';
-        teachers.forEach(t => {
-          const opt = document.createElement('option');
-          opt.value = t;
-          opt.textContent = t;
-          select.appendChild(opt);
+        var select = $('teacher-select');
+        select.innerHTML = '';
+        select.appendChild(el('option', { value: '' }, '-- Select absent teacher --'));
+        teachers.forEach(function (t) { select.appendChild(el('option', { value: t }, t)); });
+      }
+
+      function onDateChange() {
+        clearError();
+        var date = $('date-select').value;
+        call('apiGetDayForDate', [date], function (day) {
+          state.day = day;
+          $('day-label').textContent = day || 'Sunday / no school';
+          call('apiGetCoversForDate', [date], function (covers) {
+            state.covers = covers;
+            renderExisting();
+            loadSchedule();
+          });
         });
       }
 
       function loadSchedule() {
-        const teacher = document.getElementById('teacher-select').value;
-        const day = document.getElementById('day-select').value;
-        
-        if (!teacher || !day) return;
-        
-        document.getElementById('loader').style.display = 'block';
-        document.getElementById('schedule-container').innerHTML = '';
-        
-        google.script.run.withSuccessHandler(renderSchedule).apiGetTeacherSchedule(teacher, day);
+        clearError();
+        var teacher = $('teacher-select').value;
+        var container = $('schedule-container');
+        container.innerHTML = '';
+        if (!teacher) return;
+        if (!state.day) { showError('The selected date is not a school day.'); return; }
+        container.appendChild(el('p', { 'class': 'muted' }, 'Loading periods…'));
+        call('apiGetTeacherSchedule', [teacher, state.day], renderSchedule);
       }
 
       function renderSchedule(schedule) {
-        document.getElementById('loader').style.display = 'none';
-        const container = document.getElementById('schedule-container');
-        
+        var container = $('schedule-container');
+        container.innerHTML = '';
         if (schedule.length === 0) {
-          container.innerHTML = '<div class="card">No classes scheduled for this teacher on this day.</div>';
+          container.appendChild(el('div', { 'class': 'card' }, 'No classes scheduled for this teacher on ' + state.day + '.'));
           return;
         }
+        var date = $('date-select').value;
+        var absent = $('teacher-select').value;
 
-        const day = document.getElementById('day-select').value;
+        schedule.forEach(function (row) {
+          var card = el('div', { 'class': 'card' });
+          var header = el('div', { 'class': 'card-header' });
+          header.appendChild(el('span', { 'class': 'period-badge' }, 'Period ' + row.Period));
+          header.appendChild(el('strong', {}, row.Class + (row.Subject ? ' (' + row.Subject + ')' : '')));
+          card.appendChild(header);
 
-        schedule.forEach((row, index) => {
-          const cardId = 'card-' + index;
-          
-          let html = \`
-            <div class="card" id="\${cardId}">
-              <div class="card-header">
-                <div>
-                  <span class="period-badge">Period \${row.Period}</span>
-                  <strong>\${row.Class} (\${row.Subject})</strong>
-                </div>
-              </div>
-              <div class="form-group" style="margin-bottom:0; display:flex; gap:10px;">
-                <select id="cover-select-\${index}" style="flex-grow:1;">
-                  <option value="">Finding available teachers...</option>
-                </select>
-                <button class="btn btn-success" onclick="assignCover(\${index}, '\${row.Period}', '\${row.Class}')">Assign</button>
-              </div>
-            </div>
-          \`;
-          container.innerHTML += html;
-          
-          // Async fetch free teachers for this period
-          google.script.run.withSuccessHandler(function(availableTeachers) {
-            const select = document.getElementById('cover-select-' + index);
-            select.innerHTML = '<option value="">-- Select Cover Teacher --</option>';
-            availableTeachers.forEach(t => {
-              const opt = document.createElement('option');
-              opt.value = t;
-              opt.textContent = t;
-              select.appendChild(opt);
-            });
-          }).apiGetAvailableTeachers(day, row.Period);
+          var existing = state.covers.filter(function (c) { return c.period === row.Period && c.classToCover === row.Class; })[0];
+          if (existing) {
+            card.className += ' covered';
+            card.appendChild(el('div', { 'class': 'ok' }, '✓ Covered by ' + existing.coverTeacher));
+            container.appendChild(card);
+            return;
+          }
+
+          var actions = el('div', { 'class': 'actions' });
+          var select = el('select', { 'aria-label': 'Cover teacher for period ' + row.Period });
+          select.appendChild(el('option', { value: '' }, 'Finding available teachers…'));
+          var button = el('button', { 'class': 'btn', type: 'button' }, 'Assign');
+          button.disabled = true;
+          actions.appendChild(select);
+          actions.appendChild(button);
+          card.appendChild(actions);
+          container.appendChild(card);
+
+          call('apiGetAvailableTeachers', [state.day, row.Period, date, absent], function (available) {
+            select.innerHTML = '';
+            select.appendChild(el('option', { value: '' }, available.length ? '-- Select cover teacher (' + available.length + ' free) --' : 'No free teacher this period'));
+            available.forEach(function (t) { select.appendChild(el('option', { value: t }, t)); });
+            button.disabled = available.length === 0;
+          });
+
+          button.addEventListener('click', function () {
+            var cover = select.value;
+            if (!cover) { showError('Please select a cover teacher first.'); return; }
+            clearError();
+            button.disabled = true;
+            card.style.opacity = '0.6';
+            google.script.run
+              .withSuccessHandler(function () {
+                state.covers.push({ period: row.Period, classToCover: row.Class, absentTeacher: absent, coverTeacher: cover });
+                card.style.opacity = '1';
+                card.className += ' covered';
+                actions.innerHTML = '';
+                actions.appendChild(el('div', { 'class': 'ok' }, '✓ Assigned ' + cover));
+                renderExisting();
+              })
+              .withFailureHandler(function (err) {
+                card.style.opacity = '1';
+                button.disabled = false;
+                showError(err);
+              })
+              .apiAssignCover(date, absent, row.Period, row.Class, cover);
+          });
         });
       }
 
-      function assignCover(index, period, className) {
-        const coverTeacher = document.getElementById('cover-select-' + index).value;
-        const absentTeacher = document.getElementById('teacher-select').value;
-        const date = document.getElementById('date-select').value;
-        
-        if (!coverTeacher) {
-          alert("Please select a cover teacher first!");
-          return;
-        }
-
-        document.getElementById('card-' + index).style.opacity = '0.5';
-        
-        google.script.run.withSuccessHandler(function() {
-          document.getElementById('card-' + index).innerHTML = \`<div style="color:var(--success); font-weight:bold;">Assigned \${coverTeacher} successfully!</div>\`;
-        }).apiAssignCover(date, absentTeacher, period, className, coverTeacher);
+      function renderExisting() {
+        var box = $('existing-container');
+        box.innerHTML = '';
+        if (!state.covers.length) return;
+        box.appendChild(el('h3', {}, 'Covers already assigned for this date'));
+        var table = el('table');
+        var head = el('tr');
+        ['Period', 'Class', 'Absent', 'Cover'].forEach(function (h) { head.appendChild(el('th', {}, h)); });
+        table.appendChild(head);
+        state.covers.slice().sort(function (a, b) { return a.period - b.period; }).forEach(function (c) {
+          var tr = el('tr');
+          [c.period, c.classToCover, c.absentTeacher, c.coverTeacher].forEach(function (v) { tr.appendChild(el('td', {}, String(v))); });
+          table.appendChild(tr);
+        });
+        box.appendChild(table);
       }
     </script>
   </body>

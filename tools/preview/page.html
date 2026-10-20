@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src '__SCRIPT_HASH__'; base-uri 'none'; form-action 'none'">
+<title>Timetable preview</title>
+<style>
+  :root { color-scheme: light; --ink: #1A2530; --muted: #566573; --line: #CCD1D9; --head: #1A3A4A; --day: #2C3E50; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--ink); background: #F4F6F7; }
+  header { background: #1A252F; color: #fff; padding: 14px 20px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; color: #D5DBDB; }
+  .banner { background: #FEF9E7; color: #6E5A06; border-bottom: 1px solid #F7DC6F; padding: 8px 20px; font-size: 13px; margin: 0; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 20px 0; background: #fff; border-bottom: 1px solid var(--line); }
+  nav button { border: 1px solid var(--line); border-bottom: none; background: #F2F3F4; color: var(--ink); padding: 8px 14px; font: inherit; font-size: 14px; border-radius: 6px 6px 0 0; cursor: pointer; }
+  nav button[aria-selected="true"] { background: #fff; font-weight: 600; position: relative; top: 1px; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid #2E86C1; outline-offset: 2px; }
+  main { padding: 16px 20px 32px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
+  .summary li { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 4px 10px; font-size: 13px; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .controls label { font-weight: 600; font-size: 14px; }
+  .controls .check { font-weight: normal; }
+  select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid #ABB2B9; border-radius: 4px; background: #fff; color: var(--ink); min-width: 220px; }
+  .btn { font: inherit; font-size: 14px; padding: 6px 12px; border: 1px solid var(--day); background: var(--day); color: #fff; border-radius: 4px; cursor: pointer; }
+  .wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; }
+  table { border-collapse: collapse; width: 100%; min-width: 960px; }
+  caption { text-align: left; padding: 10px 12px; font-weight: 600; font-size: 16px; }
+  caption small { font-weight: normal; color: var(--muted); font-size: 13px; margin-left: 8px; }
+  th, td { border: 1px solid var(--line); padding: 6px 8px; font-size: 13px; vertical-align: top; text-align: left; white-space: pre-line; }
+  thead th { background: var(--head); color: #fff; text-align: center; vertical-align: middle; font-weight: 600; }
+  thead th small { display: block; font-weight: normal; color: #D6EAF8; }
+  tbody th { background: var(--day); color: #ECF0F1; white-space: nowrap; font-weight: 600; }
+  td { color: var(--ink); min-width: 110px; }
+  td .s { font-weight: 600; }
+  td .t { color: #2E4053; font-size: 12px; margin-top: 2px; }
+  td.free { color: #1D6F42; font-weight: 600; text-align: center; vertical-align: middle; }
+  .tag { display: inline-block; margin: 4px 4px 0 0; padding: 0 6px; border-radius: 9px; font-size: 11px; font-weight: 600; border: 1px solid; background: #fff; white-space: nowrap; }
+  .tag.split { color: #7E5109; border-color: #E59866; }
+  .tag.combined { color: #5B2C6F; border-color: #BB8FCE; }
+  .tag.clash { color: #922B21; border-color: #E6B0AA; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+  .legend .sw { display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; border: 1px solid var(--line); }
+  .notes { margin-top: 16px; }
+  .notes h2 { font-size: 15px; margin: 0 0 6px; }
+  .notes ul { margin: 0; padding-left: 18px; }
+  .notes li { font-size: 13px; margin-bottom: 6px; white-space: pre-line; }
+  .empty { color: var(--muted); font-size: 14px; }
+  [hidden] { display: none !important; }
+  @media print {
+    header p, .banner, nav, .controls, .summary, .notes { display: none; }
+    body { background: #fff; } main { padding: 0; }
+    .wrap { border: none; overflow: visible; } table { min-width: 0; }
+    th, td { font-size: 9px; padding: 2px 4px; }
+    @page { size: A4 landscape; margin: 8mm; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Timetable preview</h1>
+  <p id="meta"></p>
+</header>
+<p class="banner" role="note">Local preview only — not the live Google Sheet. This is what the sheet shows after <b>Data Import → Import All Pre-fill Data → NO</b>, rendered by the same Apps Script code. Fonts and column widths differ.</p>
+<nav role="tablist" aria-label="Timetable views">
+  <button type="button" role="tab" id="tab-class" aria-controls="panel-class" aria-selected="true">Class</button>
+  <button type="button" role="tab" id="tab-teacher" aria-controls="panel-teacher" aria-selected="false" tabindex="-1">Teacher</button>
+  <button type="button" role="tab" id="tab-day" aria-controls="panel-day" aria-selected="false" tabindex="-1">Day (all teachers)</button>
+  <button type="button" role="tab" id="tab-grid" aria-controls="panel-grid" aria-selected="false" tabindex="-1">All classes</button>
+  <button type="button" role="tab" id="tab-conflicts" aria-controls="panel-conflicts" aria-selected="false" tabindex="-1">Conflicts</button>
+</nav>
+<main>
+  <ul class="summary" id="summary" aria-label="Summary"></ul>
+
+  <section role="tabpanel" id="panel-class" aria-labelledby="tab-class">
+    <div class="controls">
+      <label for="sel-class">Class</label><select id="sel-class"></select>
+      <button class="btn" type="button" data-print>Print</button>
+    </div>
+    <div class="wrap"><table id="tbl-class"></table></div>
+    <ul class="legend" aria-label="Colours">
+      <li><span class="sw" style="background:#EBF5FB"></span>one class, one lecture</li>
+      <li><span class="sw" style="background:#FEF5E7"></span>split class (groups at once)</li>
+      <li><span class="sw" style="background:#F5EEF8"></span>taught together with another section</li>
+      <li><span class="sw" style="background:#FADBD8"></span>teacher clash</li>
+    </ul>
+    <div class="notes" id="notes-class"></div>
+  </section>
+
+  <section role="tabpanel" id="panel-teacher" aria-labelledby="tab-teacher" hidden>
+    <div class="controls">
+      <label for="sel-teacher">Teacher</label><select id="sel-teacher"></select>
+      <button class="btn" type="button" data-print>Print</button>
+    </div>
+    <div class="wrap"><table id="tbl-teacher"></table></div>
+    <ul class="legend" aria-label="Colours">
+      <li><span class="sw" style="background:#EAFAF1"></span>free</li>
+      <li><span class="sw" style="background:#EBF5FB"></span>teaching</li>
+      <li><span class="sw" style="background:#FDEDEC"></span>clash (two lectures at once)</li>
+    </ul>
+  </section>
+
+  <section role="tabpanel" id="panel-day" aria-labelledby="tab-day" hidden>
+    <div class="controls">
+      <label for="sel-day">Day</label><select id="sel-day"></select>
+      <label class="check"><input type="checkbox" id="hide-idle" checked> Hide teachers with no periods</label>
+      <button class="btn" type="button" data-print>Print</button>
+    </div>
+    <div class="wrap"><table id="tbl-day"></table></div>
+    <ul class="legend" aria-label="Colours">
+      <li><span class="sw" style="background:#EAFAF1"></span>free</li>
+      <li><span class="sw" style="background:#EBF5FB"></span>teaching</li>
+      <li><span class="sw" style="background:#F5EEF8"></span>sections taught together</li>
+      <li><span class="sw" style="background:#FDEDEC"></span>clash</li>
+    </ul>
+  </section>
+
+  <section role="tabpanel" id="panel-grid" aria-labelledby="tab-grid" hidden>
+    <div class="controls"><button class="btn" type="button" data-print>Print</button></div>
+    <div class="wrap"><table id="tbl-grid"></table></div>
+  </section>
+
+  <section role="tabpanel" id="panel-conflicts" aria-labelledby="tab-conflicts" hidden>
+    <div id="conflict-summary"></div>
+    <div class="wrap"><table id="tbl-conflicts"></table></div>
+  </section>
+</main>
+<script type="application/json" id="tt-data">__DATA__</script>
+<script>__SCRIPT__</script>
+</body>
+</html>

@@ -11,15 +11,18 @@
 // PUBLIC: Full generation with styling (called from menu)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function generateMasterGrid() {
+/**
+ * @param {boolean} [silent=false] When true, no alert is shown (used after imports).
+ */
+function generateMasterGrid(silent) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let gridSheet = ss.getSheetByName('Master_Grid_View');
-  if (!gridSheet) gridSheet = ss.insertSheet('Master_Grid_View');
+  let gridSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_GRID);
+  if (!gridSheet) gridSheet = ss.insertSheet(CONFIG.SHEETS.MASTER_GRID);
   gridSheet.clear();
 
   const result = _buildMasterGridOutput_();
   if (!result) {
-    SpreadsheetApp.getUi().alert('Master Schedule is empty!');
+    if (!silent) SpreadsheetApp.getUi().alert('Master Schedule is empty!');
     return;
   }
 
@@ -33,7 +36,7 @@ function generateMasterGrid() {
   // Apply full premium styling
   _applyMasterGridStyling_(gridSheet, numRows, numCols, classes.length);
 
-  SpreadsheetApp.getUi().alert('Master Grid View generated with premium styling!');
+  if (!silent) SpreadsheetApp.getUi().alert('Master Grid View generated with premium styling!');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +45,7 @@ function generateMasterGrid() {
 
 function refreshMasterGridData_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const gridSheet = ss.getSheetByName('Master_Grid_View');
+  const gridSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_GRID);
   if (!gridSheet || gridSheet.getLastRow() === 0) return; // don't create from scratch
 
   const result = _buildMasterGridOutput_();
@@ -58,6 +61,12 @@ function refreshMasterGridData_() {
     gridSheet.getRange(numRows + 1, 1, existingRows - numRows, numCols).clearContent();
   }
   gridSheet.getRange(1, 1, numRows, numCols).setValues(gridOutput);
+  // Rows added since the last full restyle (e.g. new classes) get the basic body style
+  if (numRows > existingRows && existingRows > 0) {
+    gridSheet.getRange(existingRows + 1, 1, numRows - existingRows, numCols)
+             .setFontFamily(CONFIG.FONT).setWrap(true)
+             .setVerticalAlignment('middle').setHorizontalAlignment('center');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,11 +74,18 @@ function refreshMasterGridData_() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function _buildMasterGridOutput_() {
-  const scheduleData = DataAccess.getSheetDataAsObjects('Master_Schedule');
+  const scheduleData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE);
   if (scheduleData.length === 0) return null;
 
-  const classes = [...new Set(scheduleData.map(r => r.Class))].sort();
-  const periods = [1, 2, 3, 4, 5, 6, 7, 8];
+  // Classes sheet order first (6th … 12th), then any class only found in the schedule
+  const known = getClassNames_();
+  const extra = [...new Set(scheduleData.map(r => String(r.Class || '').trim()).filter(Boolean))]
+    .filter(c => known.indexOf(c) === -1);
+  const inSchedule = {};
+  scheduleData.forEach(r => { inSchedule[String(r.Class || '').trim()] = true; });
+  const classes = known.filter(c => inSchedule[c]).concat(extra);
+  const periods = CONFIG.PERIODS;
+  const numDays = CONFIG.DAYS.length;
 
   // Build lookup: lookup[class][period] → array of { day, entry }
   const lookup = {};
@@ -79,19 +95,19 @@ function _buildMasterGridOutput_() {
   });
 
   scheduleData.forEach(row => {
-    if (row.Class && row.Period) {
+    if (row.Class && row.Period && row.Day) {
       const p = parseInt(row.Period);
-      if (lookup[row.Class] && lookup[row.Class][p]) {
+      const cls = String(row.Class).trim();
+      if (lookup[cls] && lookup[cls][p] && (row.Subject || row.Teacher)) {
         let entry = row.Subject || '';
         if (row.Teacher) entry += ' (' + row.Teacher + ')';
-        lookup[row.Class][p].push({ day: row.Day, entry: entry });
+        lookup[cls][p].push({ day: String(row.Day), entry: entry });
       }
     }
   });
 
   // Build output array
-  const headers = ['Class', 'Period 1', 'Period 2', 'Period 3', 'Period 4',
-                   'Period 5', 'Period 6', 'Period 7', 'Period 8'];
+  const headers = ['Class'].concat(periods.map(periodHeader_));
   const gridOutput = [headers];
 
   classes.forEach(c => {
@@ -109,8 +125,10 @@ function _buildMasterGridOutput_() {
         });
         const cellLines = [];
         for (const [entryText, daysArr] of Object.entries(grouped)) {
-          cellLines.push(daysArr.length >= 5 ? entryText
-                                             : entryText + ' [' + daysArr.join(',') + ']');
+          // Only an entry that runs every school day is shown without its day list
+          // (">= 5" used to hide the one day an entry did NOT run)
+          cellLines.push(daysArr.length >= numDays ? entryText
+                                                   : entryText + ' [' + daysArr.join(',') + ']');
         }
         rowOutput.push(cellLines.join('\n'));
       }
@@ -133,7 +151,7 @@ function _applyMasterGridStyling_(gridSheet, numRows, numCols, numClasses) {
   gridSheet.setFrozenRows(1);
   gridSheet.setFrozenColumns(1);
 
-  dataRange.setFontFamily('Montserrat')
+  dataRange.setFontFamily(CONFIG.FONT)
            .setVerticalAlignment('middle')
            .setHorizontalAlignment('center')
            .setWrap(true)

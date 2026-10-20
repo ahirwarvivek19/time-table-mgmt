@@ -1,18 +1,21 @@
 {
   "name": "time-table-mgmt",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
+  "version": "2.0.0",
+  "private": true,
+  "description": "School timetable management system on Google Sheets + Apps Script",
   "license": "ISC",
-  "description": "",
-  "devDependencies": {
-    "@google/clasp": "^3.3.0"
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "convert": "node tools/convert/build.js",
+    "convert:check": "node tools/convert/build.js --check",
+    "push": "clasp push",
+    "pull": "clasp pull",
+    "convert:export-flat": "node tools/convert/build.js --check --export-flat timetable-flat.csv",
+    "preview": "node tools/preview/build.js",
+    "preview:serve": "node tools/preview/build.js --serve"
   },
-  "dependencies": {
-    "xlsx": "^0.18.5"
+  "devDependencies": {
+    "@google/clasp": "3.4.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

@@ -1,0 +1,8 @@
+{
+  "label": "2026-27",
+  "sources": [
+    { "format": "class-blocks", "file": "Timetable.xlsx", "sheet": "6-8" },
+    { "format": "class-blocks", "file": "Timetable.xlsx", "sheet": "9-12" }
+  ],
+  "teacherwise": { "file": "Timetable.xlsx", "sheet": "Teacherwise" }
+}

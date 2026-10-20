@@ -12,8 +12,8 @@ const ClassViewManager = {
    */
   renderClassView: function(className) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName('Class_View');
-    if (!sheet) sheet = ss.insertSheet('Class_View');
+    let sheet = ss.getSheetByName(CONFIG.SHEETS.CLASS_VIEW);
+    if (!sheet) sheet = ss.insertSheet(CONFIG.SHEETS.CLASS_VIEW);
 
     sheet.setFrozenRows(0);    // reset frozen state before any unmerges/clears
     sheet.setFrozenColumns(0);
@@ -21,14 +21,14 @@ const ClassViewManager = {
     sheet.getDataRange().breakApart();
     sheet.setHiddenGridlines(true);
 
-    const days    = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const periods = [1, 2, 3, 4, 5, 6, 7, 8];
-    const numCols = 9; // Day col + 8 period cols
+    const days    = CONFIG.DAYS;
+    const periods = CONFIG.PERIODS;
+    const numCols = periods.length + 1; // Day col + period cols
     const startRow = 5; // Grid header at row 5, data from row 6
 
     // ── 1. CLASS SELECTOR (Row 3) ──────────────────────────────────────────
-    const classesData = DataAccess.getSheetDataAsObjects('Classes');
-    const classNames  = classesData.map(c => c['Class Name']).filter(c => c).sort();
+    // Keep the Classes sheet order (alphabetical sorting put "10th A" before "6th A")
+    const classNames  = getClassNames_();
 
     if (!className && classNames.length > 0) {
       className = classNames[0];
@@ -77,39 +77,29 @@ const ClassViewManager = {
     sheet.setRowHeight(4, 6);
 
     // ── 3. FETCH SCHEDULE DATA ────────────────────────────────────────────
-    const scheduleData = DataAccess.getSheetDataAsObjects('Master_Schedule');
-    // Filter matching rows using multi-class matching
-    const classSchedule = scheduleData.filter(r => ScheduleParser.rowIncludesClass(r, className));
+    const scheduleData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE);
+    // Rows of every class, by slot: needed to tell combined lectures and clashes apart
+    const bySlot = {};
+    scheduleData.forEach(r => {
+      const d = normalizeDay_(r.Day);
+      const p = parseInt(r.Period);
+      if (!d || isNaN(p)) return;
+      (bySlot[d + '|' + p] = bySlot[d + '|' + p] || []).push(r);
+    });
 
     const lookup = {};
     days.forEach(d => {
       lookup[d] = {};
-      periods.forEach(p => lookup[d][p] = { subject: '', teacher: '' });
-    });
-
-    classSchedule.forEach(row => {
-      if (row.Day && row.Period && lookup[row.Day]) {
-        const p = parseInt(row.Period);
-        if (isNaN(p) || p < 1 || p > 8) return;
-
-        const current = lookup[row.Day][p];
-        if (!current.subject) {
-          current.subject = row.Subject || '';
-          current.teacher = row.Teacher || '';
-        } else {
-          // Combine optional subjects or multi-teacher slots
-          if (row.Subject && !current.subject.includes(row.Subject)) {
-            current.subject += ' / ' + row.Subject;
-          }
-          if (row.Teacher && !current.teacher.includes(row.Teacher)) {
-            current.teacher += ' / ' + row.Teacher;
-          }
-        }
-      }
+      periods.forEach(p => {
+        const info = ScheduleParser.describeSlot(bySlot[d + '|' + p] || [], className);
+        // Lanes keep subject i ↔ teacher i aligned even when several rows are merged
+        const text = ScheduleParser.formatLanes(info.lanes);
+        lookup[d][p] = { subject: text.subject, teacher: text.teacher, info: info };
+      });
     });
 
     // ── 4. DROPDOWN VALIDATION RULES ─────────────────────────────────────
-    let subjectsList = DataAccess.getSheetDataAsObjects('Subjects')
+    let subjectsList = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SUBJECTS)
                                  .map(r => r['Subject Name']).filter(s => s);
     if (subjectsList.length === 0) {
       subjectsList = [...new Set(scheduleData.map(r => r['Subject']).filter(s => s))].sort();
@@ -121,8 +111,7 @@ const ClassViewManager = {
           .build()
       : null;
 
-    const teachersList = DataAccess.getSheetDataAsObjects('Teachers')
-                                   .map(t => t['Teacher Name']).filter(t => t);
+    const teachersList = getTeacherNames_();
     const teacherRule = teachersList.length > 0
       ? SpreadsheetApp.newDataValidation()
           .requireValueInList(teachersList, true)
@@ -131,8 +120,7 @@ const ClassViewManager = {
       : null;
 
     // ── 5. BUILD GRID DATA ────────────────────────────────────────────────
-    const periodLabels = ['Day / Row', 'Period 1', 'Period 2', 'Period 3', 'Period 4',
-                          'Period 5', 'Period 6', 'Period 7', 'Period 8'];
+    const periodLabels = ['Day / Row'].concat(periods.map(periodHeader_));
     const gridOutput = [periodLabels];
 
     days.forEach(day => {
@@ -209,6 +197,32 @@ const ClassViewManager = {
       currentRow += 2;
     });
 
+    // ── 8. SPLIT / COMBINED / CLASH MARKERS ───────────────────────────────
+    // Colour the subject cell and explain it in a note (hover to read).
+    const mark = { split: '#FEF5E7', combined: '#F5EEF8', clash: '#FADBD8' };
+    const bgs = [], notes = [];
+    days.forEach(day => {
+      const bgRow = [], noteRow = [];
+      periods.forEach(p => {
+        const info = lookup[day][p].info;
+        bgRow.push(info.clashes.length ? mark.clash : info.split ? mark.split : info.combinedWith.length ? mark.combined : '#EBF5FB');
+        noteRow.push(info.note);
+      });
+      bgs.push(bgRow);
+      notes.push(noteRow);
+    });
+    days.forEach((day, i) => {
+      const range = sheet.getRange(startRow + 1 + i * 2, 2, 1, periods.length);
+      range.setBackgrounds([bgs[i]]);
+      range.setNotes([notes[i]]);
+    });
+    sheet.getRange(3, 4, 1, numCols - 3)
+         .merge()
+         .setValue('🟧 split class   🟪 taught with another section   🟥 teacher clash   — hover a cell for details')
+         .setFontSize(9)
+         .setFontColor('#5D6D7E')
+         .setHorizontalAlignment('left');
+
     // Column widths
     sheet.setColumnWidth(1, 110);
     for (let i = 2; i <= numCols; i++) {
@@ -233,34 +247,35 @@ const ClassViewManager = {
     if (!className || !day || !period) return null;
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const msSheet = ss.getSheetByName('Master_Schedule');
+    const msSheet = ss.getSheetByName(CONFIG.SHEETS.SCHEDULE);
     if (!msSheet) return null;
 
+    const C = CONFIG.COL;
     const values = msSheet.getDataRange().getValues();
     let rowIndexToUpdate = -1;
 
     for (let i = 1; i < values.length; i++) {
-      if (values[i][0] === day && values[i][1] == period && ScheduleParser.rowIncludesClass({ Class: values[i][2] }, className)) {
+      if (normalizeDay_(values[i][C.DAY - 1]) === day && values[i][C.PERIOD - 1] == period && ScheduleParser.rowIncludesClass({ Class: values[i][C.CLASS - 1] }, className)) {
         rowIndexToUpdate = i + 1; // 1-indexed
         break;
       }
     }
 
+    const col = editedType === 'Subject' ? C.SUBJECT : editedType === 'Teacher' ? C.TEACHER : 0;
+    if (!col) return null;
+
     if (rowIndexToUpdate > 0) {
-      if (editedType === 'Subject') {
-        msSheet.getRange(rowIndexToUpdate, 5).setValue(newValue);
-      } else if (editedType === 'Teacher') {
-        msSheet.getRange(rowIndexToUpdate, 6).setValue(newValue);
-      }
-    } else {
-      // Row doesn't exist — create it only when Subject is edited
-      if (editedType === 'Subject') {
-        const classes   = DataAccess.getSheetDataAsObjects('Classes');
-        const classData = classes.find(c => c['Class Name'] === className);
-        const tier = classData ? classData['Academic Tier'] : '';
-        const room = classData ? classData['Room Assigned']  : '';
-        msSheet.appendRow([day, period, className, tier, newValue, '', room, '']);
-      }
+      msSheet.getRange(rowIndexToUpdate, col).setValue(newValue);
+    } else if (String(newValue || '').trim()) {
+      // Row doesn't exist yet — create it (previously a Teacher edit on an empty slot was lost)
+      const classes   = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.CLASSES);
+      const classData = classes.find(c => ScheduleParser.sameName(c['Class Name'], className));
+      const tier = classData ? classData['Academic Tier'] : '';
+      const room = classData ? classData['Room Assigned']  : '';
+      msSheet.appendRow([day, period, className, tier,
+                         editedType === 'Subject' ? newValue : '',
+                         editedType === 'Teacher' ? newValue : '',
+                         room, '']);
     }
     return null;
   }

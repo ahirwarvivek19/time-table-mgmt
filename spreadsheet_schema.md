@@ -1,78 +1,49 @@
-# Spreadsheet Schema & Setup Guide
+# Spreadsheet Schema
 
-This document defines the physical layout of the Google Sheet required to power the Timetable Management System.
+All tabs are created by **⚙️ Setup & Utilities → Setup Spreadsheets (Run Once)** (`setupInitialSpreadsheet()`).
+Names and column positions are defined once in `Config.gs` (`CONFIG.SHEETS`, `CONFIG.COL`).
 
-> [!TIP]
-> **Automated Setup:** To save you time, the `Code.js` file (which we are generating next) includes a function called `setupInitialSpreadsheet()`. When you run this function in Apps Script, it will automatically create all these tabs and headers for you!
-> 
-> However, if you prefer to build it manually, follow the structure below.
+## Data tabs (admin-edited)
 
-## 1. Data Entry Tabs (Admin Controlled)
+### `Teachers`
+| Col | Header | Notes |
+|---|---|---|
+| A | Teacher Name | Must match the names used in `Master_Schedule` exactly (case and spaces are ignored). |
+| B | Subject Specialization | Informational. |
+| C | Max Hours / Week | Periods per week; **Check For Conflicts** reports teachers above it. |
+| D | Days Unavailable | e.g. `Monday, Friday`. Used by validation, availability grid and cover manager. |
+| E | Total Hours Scheduled | Filled automatically on refresh/validation (a combined lecture counts once). |
 
-### Tab: `Teachers`
-* **Purpose:** Registry of all teachers and their availability.
-* **Columns:**
-  * `A: Teacher Name` (e.g., John Doe)
-  * `B: Subject Specialization` (e.g., Mathematics, Physics)
-  * `C: Max Hours / Week` (e.g., 25)
-  * `D: Days Unavailable` (e.g., "Monday, Friday" or blank)
-  * `E: Total Hours Scheduled` (Formula auto-calculating from the Master Schedule)
+### `Subjects`
+Column A `Subject Name` feeds the subject dropdowns. Multi-subject cells (`Hindi / IT`) are listed as one value.
 
-### Tab: `Classes`
-* **Purpose:** Defines the academic blocks and sections.
-* **Columns:**
-  * `A: Class Name` (e.g., 10A, 10B)
-  * `B: Academic Tier` (Dropdown: Primary, Middle, Secondary, Higher Secondary)
-  * `C: Room Assigned` (e.g., Room 101)
+### `Classes`
+| Col | Header | Notes |
+|---|---|---|
+| A | Class Name | e.g. `6th A`, `11th C`. Row order = order in all dropdowns/views. |
+| B | Academic Tier | `Middle`, `Secondary`, `Higher Secondary`. |
+| C | Room Assigned | Blank or `N/A` = no room (ignored by the room-clash check). |
 
+### `Master_Schedule` (source of truth)
+| Col | Header | Notes |
+|---|---|---|
+| A | Day | `Monday` … `Saturday` |
+| B | Period | `1` … `8` |
+| C | Class | One class per row (shared lectures are repeated on each section's row). |
+| D | Academic Tier | Copied from `Classes`. |
+| E | Subject | One subject, or the groups of a split period: `Sanskrit / IT / Beauty`. Medium groups: `Physics (H.M) / Chemistry (E.M)`. |
+| F | Teacher | Same order as the subjects: `Neha Jamidar / Divya Lodval / Krishna Patale`. `+` joins two teachers of one group; `-` = no teacher. |
+| G | Room | Optional. |
+| H | Clash Status | Written by **Check For Conflicts**. |
 
-### Tab: `Rooms`
-* **Purpose:** Tracks physical rooms and specialized equipment.
-* **Columns:**
-  * `A: Room Name` (e.g., Chemistry Lab)
-  * `B: Capacity` (e.g., 40)
-  * `C: Specialized Type` (e.g., Standard, Science Lab, IT Lab)
+## Generated tabs
 
----
-
-## 2. Timetable Ledgers (System Driven)
-
-### Tab: `Master_Schedule` (The Edit Hub)
-* **Purpose:** The "flat database" that powers everything. Every single period for every class is represented as a single row. This allows the backend to be lightning fast and makes manual editing straightforward.
-* **Columns:**
-  * `A: Day` (e.g., Monday)
-  * `B: Period` (e.g., 1)
-  * `C: Class` (e.g., 10A)
-  * `D: Academic Tier` (e.g., Secondary)
-  * `E: Subject` (Editable Dropdown)
-  * `F: Teacher` (Editable Dropdown)
-  * `G: Room` (Editable Dropdown)
-  * `H: Clash Status` (Conditional Formatting triggers if a clash is detected)
-
----
-
-## 3. Dynamic Dashboards (Read Only)
-
-### Tab: `Class_View`
-* **Purpose:** A clean, printable 2D grid showing a specific class's week.
-* **Structure:**
-  * `Cell B2:` Dropdown to select a "Class".
-  * `Grid (B5:J10):` Days on the Y-Axis, Periods on the X-Axis.
-  * **Core Formula:** Utilizes `=FILTER(Master_Schedule!E:F, Master_Schedule!C:C = B2)` shaped into a grid.
-
-### Tab: `Teacher_View`
-* **Purpose:** A clean, printable 2D grid showing a specific teacher's week.
-* **Structure:**
-  * `Cell B2:` Dropdown to select a "Teacher".
-  * `Grid (B5:J10):` Days on the Y-Axis, Periods on the X-Axis.
-  * **Core Formula:** Utilizes `=FILTER(Master_Schedule!C:C & " - " & Master_Schedule!G:G, Master_Schedule!F:F = B2)` shaped into a grid.
-
-### Tab: `Cover_Manager`
-* **Purpose:** To manage daily absent teachers and find replacements.
-* **Columns:**
-  * `A: Date`
-  * `B: Absent Teacher` (Dropdown)
-  * `C: Period` (Auto-populates based on Master Schedule)
-  * `D: Class to Cover` (Auto-populates)
-  * `E: Suggested Available Teachers` (Formula checking who is free during this specific Day/Period)
-  * `F: Assigned Cover Teacher` (Manual Selection)
+| Tab | Editable | Layout |
+|---|---|---|
+| `Class_View` | Yes | B3 = class selector; row 5 = period headers; rows 6–17 = subject/teacher row pair per day. |
+| `Teacher_View` | Yes | B3 = teacher selector; rows 6–11 = Mon–Sat; cell = `Class` + newline + `Subject`. |
+| `Teacher_Day_View` | Yes | B3 = day, E3 = class filter; one row per teacher. |
+| `Master_Grid_View` | No | One row per class; each cell lists entries with the days they run (`[Mon,Tue]`). |
+| `Teacher_Availability_Grid` | No | Generated on demand for one day. |
+| `Cover_Manager` | Append-only | Date, Absent Teacher, Period, Class to Cover, Suggested Available Teachers, Assigned Cover Teacher. |
+| `_Prefill_Data_Backup` | Hidden | Snapshot from **Save Current Sheet as Pre-fill Data** (A:C classes, E:I teachers, K subjects, M:T schedule). |

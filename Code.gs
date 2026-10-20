@@ -14,7 +14,9 @@ function onOpen() {
     .addItem('Apply Master Schedule Dropdowns', 'applyMasterScheduleDropdowns')
     .addItem('Apply Global Styling', 'styleEntireSheet')
     .addItem('Reorder Spreadsheet Tabs', 'reorderSheets')
-    .addItem('Format Teacher Names (Title Case)', 'formatAllTeacherNames');
+    .addItem('Format Teacher Names (Title Case)', 'formatAllTeacherNames')
+    .addSeparator()
+    .addItem('Install Edit Sync Trigger', 'installEditTrigger');
 
   const importMenu = ui.createMenu('📥 Data Import')
     .addItem('Import All Pre-fill Data', 'importExcelData')
@@ -41,38 +43,39 @@ function onOpen() {
  * @param {boolean} [silent=false] When true, suppresses the completion UI alert.
  */
 function refreshAllViews(silent) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const S = CONFIG.SHEETS;
+
   // 1. Re-apply Master Schedule Dropdowns
   applyMasterScheduleDropdowns_(/* silent= */ true);
 
-  // 2. Refresh Class View
-  const classViewSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Class_View');
-  let activeClass = '';
-  if (classViewSheet && classViewSheet.getLastRow() >= 3) {
-    activeClass = classViewSheet.getRange('B3').getValue();
-  }
-  const classesData = DataAccess.getSheetDataAsObjects('Classes');
-  if (!activeClass && classesData.length > 0) activeClass = classesData[0]['Class Name'];
+  // 2. Refresh Class View (keep the selected class if it still exists)
+  const classViewSheet = ss.getSheetByName(S.CLASS_VIEW);
+  const classNames = getClassNames_();
+  let activeClass = classViewSheet && classViewSheet.getLastRow() >= 3 ? String(classViewSheet.getRange('B3').getValue() || '') : '';
+  if (!activeClass && classNames.length > 0) activeClass = classNames[0];
   if (activeClass) ClassViewManager.renderClassView(activeClass);
 
-  // 3. Refresh Teacher View
-  const teacherViewSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Teacher_View');
-  let activeTeacher = '';
-  if (teacherViewSheet && teacherViewSheet.getLastRow() >= 3) {
-    activeTeacher = teacherViewSheet.getRange('B3').getValue();
-  }
-  const teachersData = DataAccess.getSheetDataAsObjects('Teachers');
-  if (!activeTeacher && teachersData.length > 0) activeTeacher = teachersData[0]['Teacher Name'];
-  if (activeTeacher) TeacherViewManager.renderTeacherView(activeTeacher);
+  // 3. Refresh Teacher View (falls back to the first teacher if the selected one was removed)
+  const teacherViewSheet = ss.getSheetByName(S.TEACHER_VIEW);
+  const activeTeacher = teacherViewSheet && teacherViewSheet.getLastRow() >= 3 ? teacherViewSheet.getRange('B3').getValue() : '';
+  if (getTeacherNames_().length > 0) TeacherViewManager.renderTeacherView(activeTeacher);
 
   // 4. Refresh Day-wise Teacher View
-  const teacherDayViewSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Teacher_Day_View');
-  let activeDay = 'Monday';
-  let activeClassFilter = 'All Classes';
+  const teacherDayViewSheet = ss.getSheetByName(S.TEACHER_DAY_VIEW);
+  let activeDay = CONFIG.DAYS[0];
+  let activeClassFilter = CONFIG.ALL_CLASSES;
   if (teacherDayViewSheet && teacherDayViewSheet.getLastRow() >= 3) {
-    activeDay = teacherDayViewSheet.getRange('B3').getValue() || 'Monday';
-    activeClassFilter = teacherDayViewSheet.getRange('E3').getValue() || 'All Classes';
+    activeDay = teacherDayViewSheet.getRange('B3').getValue() || CONFIG.DAYS[0];
+    activeClassFilter = teacherDayViewSheet.getRange('E3').getValue() || CONFIG.ALL_CLASSES;
   }
   TeacherDayViewManager.renderTeacherDayView(activeDay, activeClassFilter);
+
+  // 4b. Teachers → "Total Hours Scheduled" (periods per week)
+  DataAccess.updateTeacherLoad();
+
+  // 4c. Lets the optional read-only web page (WebApp.gs) find this spreadsheet
+  rememberSpreadsheetId_();
 
   // 5. Refresh Master Grid View Data
   refreshMasterGridData_();
@@ -92,9 +95,9 @@ function refreshAllViews(silent) {
  * Initializes or Refreshes the Class View with the first available class.
  */
 function initClassView() {
-  const classesData = DataAccess.getSheetDataAsObjects('Classes');
-  if (classesData.length > 0 && classesData[0]['Class Name']) {
-    ClassViewManager.renderClassView(classesData[0]['Class Name']);
+  const classNames = getClassNames_();
+  if (classNames.length > 0) {
+    ClassViewManager.renderClassView(classNames[0]);
     SpreadsheetApp.getUi().alert('Class View initialized successfully!');
   } else {
     SpreadsheetApp.getUi().alert('No classes found in the Classes tab.');
@@ -105,9 +108,9 @@ function initClassView() {
  * Initializes or Refreshes the Teacher View with the first available teacher.
  */
 function initTeacherView() {
-  const teachersData = DataAccess.getSheetDataAsObjects('Teachers');
-  if (teachersData.length > 0 && teachersData[0]['Teacher Name']) {
-    TeacherViewManager.renderTeacherView(teachersData[0]['Teacher Name']);
+  const teacherNames = getTeacherNames_();
+  if (teacherNames.length > 0) {
+    TeacherViewManager.renderTeacherView(teacherNames[0]);
     SpreadsheetApp.getUi().alert('Teacher View initialized successfully!');
   } else {
     SpreadsheetApp.getUi().alert('No teachers found in the Teachers tab.');
@@ -118,7 +121,7 @@ function initTeacherView() {
  * Initializes or Refreshes the Day-wise Teacher Schedule View for Monday.
  */
 function initTeacherDayView() {
-  TeacherDayViewManager.renderTeacherDayView('Monday');
+  TeacherDayViewManager.renderTeacherDayView(CONFIG.DAYS[0]);
   SpreadsheetApp.getUi().alert('Day-wise Teacher View initialized successfully!');
 }
 
@@ -133,7 +136,8 @@ function styleEntireSheet(silent) {
   const sheets = ss.getSheets();
 
   // Sheets that have their own custom styling & layouts — skip default table styling for these
-  const customSheets = ['Master_Grid_View', 'Class_View', 'Teacher_View', 'Teacher_Day_View', 'Teacher_Availability_Grid'];
+  const S = CONFIG.SHEETS;
+  const customSheets = [S.MASTER_GRID, S.CLASS_VIEW, S.TEACHER_VIEW, S.TEACHER_DAY_VIEW, S.AVAILABILITY];
 
   sheets.forEach(sheet => {
     sheet.setHiddenGridlines(true);
@@ -152,13 +156,13 @@ function styleEntireSheet(silent) {
         .setFontWeight('bold')
         .setFontColor('#FFFFFF')
         .setBackground('#2C3E50')
-        .setFontFamily('Montserrat');
+        .setFontFamily(CONFIG.FONT);
       sheet.setFrozenRows(1);
     }
 
     if (lastRow > 1 && lastCol > 0) {
       const bodyRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
-      bodyRange.setFontFamily('Montserrat');
+      bodyRange.setFontFamily(CONFIG.FONT);
 
       // Build 2D colour array — one batch call instead of per-row API calls
       const bgColors = [];
@@ -181,37 +185,38 @@ function styleEntireSheet(silent) {
 function setupInitialSpreadsheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  const S = CONFIG.SHEETS;
   const requiredSheets = [
     {
-      name: 'Teachers',
+      name: S.TEACHERS,
       headers: ['Teacher Name', 'Subject Specialization', 'Max Hours / Week', 'Days Unavailable', 'Total Hours Scheduled']
     },
     {
-      name: 'Subjects',
+      name: S.SUBJECTS,
       headers: ['Subject Name']
     },
     {
-      name: 'Classes',
+      name: S.CLASSES,
       headers: ['Class Name', 'Academic Tier', 'Room Assigned']
     },
     {
-      name: 'Master_Schedule',
-      headers: ['Day', 'Period', 'Class', 'Academic Tier', 'Subject', 'Teacher', 'Room', 'Clash Status']
+      name: S.SCHEDULE,
+      headers: CONFIG.SCHEDULE_HEADERS
     },
     {
-      name: 'Class_View',
+      name: S.CLASS_VIEW,
       headers: []   // rendered programmatically by ClassViewManager
     },
     {
-      name: 'Teacher_View',
+      name: S.TEACHER_VIEW,
       headers: []   // rendered programmatically by TeacherViewManager
     },
     {
-      name: 'Teacher_Day_View',
+      name: S.TEACHER_DAY_VIEW,
       headers: []   // rendered programmatically by TeacherDayViewManager
     },
     {
-      name: 'Cover_Manager',
+      name: S.COVER,
       headers: ['Date', 'Absent Teacher', 'Period', 'Class to Cover', 'Suggested Available Teachers', 'Assigned Cover Teacher']
     }
   ];
@@ -239,20 +244,27 @@ function setupInitialSpreadsheet() {
   applyMasterScheduleDropdowns_(/* silent= */ true);
 
   // Initialize views with first available data
-  const classesData = DataAccess.getSheetDataAsObjects('Classes');
-  if (classesData.length > 0 && classesData[0]['Class Name']) {
-    ClassViewManager.renderClassView(classesData[0]['Class Name']);
+  const classNames = getClassNames_();
+  if (classNames.length > 0) ClassViewManager.renderClassView(classNames[0]);
+  const teacherNames = getTeacherNames_();
+  if (teacherNames.length > 0) TeacherViewManager.renderTeacherView(teacherNames[0]);
+  TeacherDayViewManager.renderTeacherDayView(CONFIG.DAYS[0]);
+
+  rememberSpreadsheetId_();
+
+  // Installable edit trigger (no 30-second limit, processes each edit once)
+  let triggerNote = 'Edit sync trigger installed.';
+  try {
+    installEditTrigger_();
+  } catch (err) {
+    triggerNote = 'Could not install the edit sync trigger (' + err.message + '). Run Setup & Utilities → Install Edit Sync Trigger.';
   }
-  const teachersData = DataAccess.getSheetDataAsObjects('Teachers');
-  if (teachersData.length > 0 && teachersData[0]['Teacher Name']) {
-    TeacherViewManager.renderTeacherView(teachersData[0]['Teacher Name']);
-  }
-  TeacherDayViewManager.renderTeacherDayView('Monday');
 
   SpreadsheetApp.getUi().alert(
     'Setup Complete!\n' +
-    'Tabs created: Teachers, Subjects, Classes, Master_Schedule, Class_View, Teacher_View, Teacher_Day_View, Cover_Manager.\n\n' +
-    'Next step: run \'Import Timetable Data\' from the menu to load all data.'
+    'Tabs created: Teachers, Subjects, Classes, Master_Schedule, Class_View, Teacher_View, Teacher_Day_View, Cover_Manager.\n' +
+    triggerNote + '\n\n' +
+    'Next step: run Data Import → Import All Pre-fill Data to load the timetable.'
   );
 }
 
@@ -280,7 +292,7 @@ function applyMasterScheduleDropdowns() {
  */
 function applyMasterScheduleDropdowns_(silent) {
   const ss       = SpreadsheetApp.getActiveSpreadsheet();
-  const msSheet  = ss.getSheetByName('Master_Schedule');
+  const msSheet  = ss.getSheetByName(CONFIG.SHEETS.SCHEDULE);
   if (!msSheet) return;
 
   const lastRow = msSheet.getLastRow();
@@ -292,7 +304,7 @@ function applyMasterScheduleDropdowns_(silent) {
   const dataRowCount = lastRow - 1; // exclude header
 
   // ── Subjects list ─────────────────────────────────────────────────────────
-  let subjectsList = DataAccess.getSheetDataAsObjects('Subjects')
+  let subjectsList = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SUBJECTS)
                                .map(r => r['Subject Name']).filter(s => s);
   if (subjectsList.length === 0) {
     // Fallback: derive from existing values in col E (Subject)
@@ -301,8 +313,7 @@ function applyMasterScheduleDropdowns_(silent) {
   }
 
   // ── Teachers list ─────────────────────────────────────────────────────────
-  const teachersList = DataAccess.getSheetDataAsObjects('Teachers')
-                                 .map(t => t['Teacher Name']).filter(t => t);
+  const teachersList = getTeacherNames_();
 
   // ── Build validation rules ────────────────────────────────────────────────
   const subjectRule = subjectsList.length > 0
@@ -350,26 +361,25 @@ function applyMasterScheduleDropdowns_(silent) {
  */
 function reorderSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const S = CONFIG.SHEETS;
   const desiredOrder = [
-    'Teachers',
-    'Subjects',
-    'Classes',
-    'Master_Schedule',
-    'Class_View',
-    'Teacher_View',
-    'Teacher_Day_View',
-    'Master_Grid_View',
-    'Teacher_Availability_Grid',
-    'Cover_Manager'
+    S.TEACHERS, S.SUBJECTS, S.CLASSES, S.SCHEDULE, S.CLASS_VIEW, S.TEACHER_VIEW,
+    S.TEACHER_DAY_VIEW, S.MASTER_GRID, S.AVAILABILITY, S.COVER
   ];
 
+  // moveActiveSheet() needs each sheet activated; remember where the user was
+  // and return them there (previously every refresh left them on the last tab).
+  const original = ss.getActiveSheet();
   let currentPos = 1;
   desiredOrder.forEach(name => {
     const sheet = ss.getSheetByName(name);
-    if (sheet) {
+    if (!sheet) return;
+    const atPos = ss.getSheets()[currentPos - 1];
+    if (!atPos || atPos.getName() !== name) {
       ss.setActiveSheet(sheet);
       ss.moveActiveSheet(currentPos);
-      currentPos++;
     }
+    currentPos++;
   });
+  if (original) ss.setActiveSheet(original);
 }

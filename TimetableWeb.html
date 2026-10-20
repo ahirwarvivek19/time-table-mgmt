@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 16px; color: #1A2530; background: #F8F9FA; }
+      h1 { font-size: 20px; margin: 0 0 12px; color: #2C3E50; }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+      select, button { padding: 8px; font-size: 14px; border: 1px solid #BDC3C7; border-radius: 4px; }
+      button { background: #2C3E50; color: #fff; cursor: pointer; }
+      .wrap { overflow-x: auto; }
+      table { border-collapse: collapse; background: #fff; min-width: 720px; width: 100%; }
+      th, td { border: 1px solid #CCD1D9; padding: 6px; font-size: 13px; text-align: center; vertical-align: middle; white-space: pre-line; }
+      th { background: #2C3E50; color: #fff; }
+      td.day { background: #2C3E50; color: #ECF0F1; font-weight: bold; }
+      td.free { background: #EAFAF1; color: #1E8449; }
+      #msg { color: #C0392B; margin: 8px 0; }
+      @media print { .controls { display: none; } body { background: #fff; } }
+    </style>
+  </head>
+  <body>
+    <h1 id="title">School Timetable</h1>
+    <div class="controls">
+      <label for="kind" hidden>View</label>
+      <select id="kind" aria-label="View by">
+        <option value="class">Class</option>
+        <option value="teacher">Teacher</option>
+      </select>
+      <select id="name" aria-label="Class or teacher"></select>
+      <button type="button" onclick="window.print()">Print</button>
+    </div>
+    <div id="msg" role="alert"></div>
+    <div class="wrap"><table id="grid"></table></div>
+
+    <script>
+      var options = null;
+      function $(id) { return document.getElementById(id); }
+      function el(tag, text, cls) { var n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; }
+      function fail(err) { $('msg').textContent = (err && err.message) || String(err); }
+
+      function fillNames() {
+        var list = $('kind').value === 'teacher' ? options.teachers : options.classes;
+        var sel = $('name');
+        sel.innerHTML = '';
+        list.forEach(function (n) { var o = el('option', n); o.value = n; sel.appendChild(o); });
+        load();
+      }
+
+      function load() {
+        $('msg').textContent = '';
+        var name = $('name').value;
+        if (!name) return;
+        google.script.run.withFailureHandler(fail).withSuccessHandler(render).apiWebGetTimetable($('kind').value, name);
+      }
+
+      function render(data) {
+        $('title').textContent = 'Timetable · ' + data.title;
+        var table = $('grid');
+        table.innerHTML = '';
+        var head = el('tr');
+        head.appendChild(el('th', 'Day'));
+        options.periods.forEach(function (p) { head.appendChild(el('th', 'Period ' + p.period + (p.time ? '\n' + p.time : ''))); });
+        table.appendChild(head);
+        data.rows.forEach(function (r) {
+          var tr = el('tr');
+          tr.appendChild(el('td', r.day, 'day'));
+          r.cells.forEach(function (c) { tr.appendChild(c ? el('td', c) : el('td', 'FREE', 'free')); });
+          table.appendChild(tr);
+        });
+      }
+
+      $('kind').addEventListener('change', fillNames);
+      $('name').addEventListener('change', load);
+      google.script.run.withFailureHandler(fail).withSuccessHandler(function (o) { options = o; fillNames(); }).apiWebGetOptions();
+    </script>
+  </body>
+</html>

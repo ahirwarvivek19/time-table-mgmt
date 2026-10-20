@@ -20,17 +20,52 @@ const DataAccess = {
     const values = dataRange.getValues();
     if (values.length <= 1) return []; // Only headers or empty
     
-    const headers = values[0];
+    const headers = values[0].map(h => String(h).trim());
     const data = [];
     
     for (let i = 1; i < values.length; i++) {
       let rowObj = {};
       for (let j = 0; j < headers.length; j++) {
-        rowObj[headers[j]] = values[i][j];
+        if (headers[j]) rowObj[headers[j]] = values[i][j];
       }
       data.push(rowObj);
     }
     return data;
+  },
+
+  /**
+   * Writes the computed "Total Hours Scheduled" (periods per week) for each teacher
+   * into the Teachers sheet. A lecture shared by several sections in the same
+   * period counts once.
+   * @returns {Object<string, number>} lower-cased teacher name → periods per week
+   */
+  updateTeacherLoad: function() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.TEACHERS);
+    if (!sheet || sheet.getLastRow() < 2) return {};
+
+    const slots = {};
+    this.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE).forEach(row => {
+      if (!row.Day || !row.Period) return;
+      ScheduleParser.parseRowAssignments(row).forEach(a => {
+        if (!a.teacher) return;
+        const key = ScheduleParser.normalizeName(a.teacher);
+        (slots[key] = slots[key] || {})[row.Day + '|' + row.Period] = true;
+      });
+    });
+    const load = {};
+    Object.keys(slots).forEach(k => { load[k] = Object.keys(slots[k]).length; });
+
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+    const nameCol = headers.indexOf('Teacher Name') + 1;
+    const totalCol = headers.indexOf('Total Hours Scheduled') + 1;
+    if (!nameCol || !totalCol) return load;
+
+    const n = sheet.getLastRow() - 1;
+    const names = sheet.getRange(2, nameCol, n, 1).getValues();
+    sheet.getRange(2, totalCol, n, 1).setValues(
+      names.map(r => [r[0] ? (load[ScheduleParser.normalizeName(r[0])] || 0) : ''])
+    );
+    return load;
   },
 
   /**
@@ -39,7 +74,7 @@ const DataAccess = {
    * @param {string|null} tierTarget (e.g., 'Primary', null for all)
    */
   clearMasterSchedule: function(tierTarget) {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Master_Schedule');
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.SCHEDULE);
     if (!sheet) return;
 
     if (!tierTarget) {
@@ -72,7 +107,7 @@ const DataAccess = {
   writeSchedule: function(dataGrid) {
     if (!dataGrid || dataGrid.length === 0) return;
     
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Master_Schedule');
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.SCHEDULE);
     if (!sheet) return;
     
     // Write at the bottom of existing data
