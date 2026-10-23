@@ -14,9 +14,9 @@ function openCoverManagerUI() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Daily Arrangement Manager');
 }
 
-/** Returns all teachers (Teachers sheet order, de-duplicated). */
+/** Returns all teachers A→Z (de-duplicated) for the Cover Manager pickers. */
 function apiGetTeachers() {
-  return getTeacherNames_();
+  return getTeacherNamesSorted_();
 }
 
 /** "2026-10-12" → "Monday" ('' for Sunday). Used by the dialog to pick the timetable day. */
@@ -153,8 +153,8 @@ function apiAssignCover(date, absentTeacher, period, classToCover, coverTeacher)
     const lastRow = coverSheet.getLastRow();
     const rowRange = coverSheet.getRange(lastRow, 1, 1, 6);
     rowRange.setFontFamily(CONFIG.FONT);
-    rowRange.setBackground(lastRow % 2 === 0 ? '#F8F9FA' : '#FFFFFF');
-    rowRange.setBorder(true, true, true, true, true, true, '#BDC3C7', SpreadsheetApp.BorderStyle.SOLID);
+    rowRange.setBackground(tableRowColor_(lastRow));
+    rowRange.setBorder(true, true, true, true, true, true, '#D5D8DC', SpreadsheetApp.BorderStyle.SOLID);
     return true;
   });
 }

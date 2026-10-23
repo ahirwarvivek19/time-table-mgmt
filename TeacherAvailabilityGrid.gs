@@ -22,11 +22,18 @@ function generateTeacherAvailabilityGrid() {
   renderTeacherAvailabilityGrid_(day);
 }
 
+/** The day the availability grid currently shows (from its "Teacher (Monday)" header), or ''. */
+function availabilityGridDay_(gridSheet) {
+  const m = String(gridSheet.getRange(1, 1).getValue() || '').match(/\(([^)]+)\)/);
+  return m ? normalizeDay_(m[1]) : '';
+}
+
 /**
  * Renders Teacher_Availability_Grid for one day.
  * @param {string} day  Canonical day name, e.g. "Monday"
+ * @param {boolean} [stayOnSheet]  true = refresh in the background (after an edit) without switching tabs
  */
-function renderTeacherAvailabilityGrid_(day) {
+function renderTeacherAvailabilityGrid_(day, stayOnSheet) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let gridSheet = ss.getSheetByName(CONFIG.SHEETS.AVAILABILITY);
   if (!gridSheet) gridSheet = ss.insertSheet(CONFIG.SHEETS.AVAILABILITY);
@@ -38,7 +45,7 @@ function renderTeacherAvailabilityGrid_(day) {
     SpreadsheetApp.getUi().alert('No teachers found in the Teachers tab.');
     return;
   }
-  const scheduleData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE).filter(row => row.Day === day);
+  const scheduleData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE).filter(row => normalizeDay_(row.Day) === day);
   const periods = CONFIG.PERIODS;
   const UNAVAILABLE = 'UNAVAILABLE';
 
@@ -85,7 +92,8 @@ function renderTeacherAvailabilityGrid_(day) {
   gridSheet.setHiddenGridlines(true);
   gridSheet.setFrozenRows(1);
   gridSheet.setFrozenColumns(1);
-  dataRange.setFontFamily(CONFIG.FONT).setVerticalAlignment('middle').setHorizontalAlignment('center').setWrap(true);
+  dataRange.setFontFamily(CONFIG.FONT).setVerticalAlignment('middle').setHorizontalAlignment('center').setWrap(true)
+           .setBorder(true, true, true, true, true, true, '#D5D8DC', SpreadsheetApp.BorderStyle.SOLID);
 
   gridSheet.getRange(1, 1, 1, numCols)
            .setBackground('#2C3E50')
@@ -118,5 +126,5 @@ function renderTeacherAvailabilityGrid_(day) {
   gridSheet.setColumnWidth(1, 180);
   for (let i = 2; i <= numCols; i++) gridSheet.setColumnWidth(i, 120);
 
-  ss.setActiveSheet(gridSheet);
+  if (!stayOnSheet) ss.setActiveSheet(gridSheet);
 }

@@ -7,7 +7,7 @@
  *   node tools/preview/build.js --serve --port 9000
  *
  * It runs the real .gs files against the in-memory Sheets stand-in the tests use
- * (tests/harness/gas-mock.js): Setup → Import All Pre-fill Data (the built-in data in
+ * (tests/harness/gas-mock.js): Setup → Import Timetable (the built-in data in
  * PrefillData.gs) → every Class_View, Teacher_View and Teacher_Day_View is rendered, and
  * the cell text, colours and hover notes the sheet would show are copied into one
  * self-contained page. Fonts, row heights and column widths are not reproduced.

@@ -1,0 +1,70 @@
+# Pushes the Apps Script code to Google whenever master changes, so nobody
+# has to run `clasp push` by hand.
+#
+# One-time setup (see README "Automatic push from GitHub"):
+#   1. Turn on the Apps Script API: https://script.google.com/home/usersettings
+#   2. Run `npx clasp login` locally, then copy the whole of ~/.clasprc.json
+#      into a repository secret named CLASPRC_JSON.
+#   3. Add a repository variable SCRIPT_ID with the script ID from .clasp.json.
+#
+# The flow is one-way (GitHub -> Apps Script): edits made in the Apps Script
+# editor are overwritten by the next push.
+
+name: Push to Apps Script
+
+on:
+  push:
+    branches: [master]
+  # Manual re-run from the Actions tab (e.g. after refreshing CLASPRC_JSON).
+  workflow_dispatch:
+
+# Never run two pushes at once; a newer commit waits for the older push.
+concurrency:
+  group: clasp-push
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  push:
+    # Only master may use the secret, even for manual runs on other branches.
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # package-lock.json is gitignored, so `npm ci` is not possible.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # Stop before touching Apps Script if anything is broken.
+      - name: Run tests
+        run: npm test
+
+      - name: Write clasp credentials and project file
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ vars.SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$SCRIPT_ID" ]; then
+            echo "::error::Set the CLASPRC_JSON secret and the SCRIPT_ID variable first."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '{"scriptId":"%s","rootDir":"."}\n' "$SCRIPT_ID" > .clasp.json
+
+      # --force skips the prompt shown when appsscript.json has changed.
+      - name: clasp push
+        run: npx clasp push --force
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json

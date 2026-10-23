@@ -35,9 +35,11 @@ Config.gs                 CONFIG: sheet names, days, periods, column indexes; sh
 Code.gs                   onOpen menu, refreshAllViews, setup, global styling, dropdowns, reorderSheets
 DataAccess.gs             getSheetDataAsObjects, updateTeacherLoad (Total Hours Scheduled), clear/write helpers
 ScheduleParser.gs         Splitting/pairing of multi-teacher / multi-subject / multi-class cells;
-                          assignTeacher / removeTeacher keep teacher↔subject pairs aligned
-EventHandlers.gs          onEdit dispatcher, installable-trigger install, multi-cell edit sync, cascade refresh
-ClassViewManager.gs       Class_View render + write-back
+                          assignTeacher (teacher takes the period, reports who was replaced) / removeTeacher;
+                          checkLaneText (subjects ↔ teacher groups line up); describeSlot (per-group "taught together")
+EventHandlers.gs          onEdit dispatcher, onScheduleChange (rows deleted), trigger install, multi-cell edit sync,
+                          afterScheduleChange_ (views + Clash Status + load + availability), logChanges_ (Change_Log)
+ClassViewManager.gs       Class_View render + applyClassViewEdit (checked write-back: lanes, names, new clashes)
 TeacherViewManager.gs     Teacher_View render; updateTeacherSlot_ (shared write-back for both teacher views)
 TeacherDayViewManager.gs  Teacher_Day_View render + write-back
 MasterGrid.gs             Master_Grid_View (full generate / data-only refresh)
@@ -74,12 +76,13 @@ Timetable System
 ├── ✅ Check For Conflicts           runValidation()
 ├── 📊 Teacher Availability         generateTeacherAvailabilityGrid()
 ├── 👥 Cover Manager                openCoverManagerUI()
-├── ⚙️ Setup & Utilities ▶  Setup Spreadsheets (Run Once) · Generate Master Grid (Full Restyle) ·
-│                          Apply Master Schedule Dropdowns · Apply Global Styling · Reorder Spreadsheet Tabs ·
-│                          Format Teacher Names (Title Case) · Install Edit Sync Trigger
-└── 📥 Data Import ▶        Import All Pre-fill Data · Import Static Teacher Registry · Import Dynamic Schedule Data ·
-                           Save Current Sheet as Pre-fill Data · Reset Pre-fill Data to Default
+├── 📥 Import Timetable            importExcelData()  (asks snapshot vs built-in when a snapshot exists)
+├── 💾 Save Snapshot               saveCurrentSheetAsPrefillData()
+└── ⚙️ Setup / Repair               setupInitialSpreadsheet()  (tabs, headers, views, edit-sync trigger)
 ```
+
+Keep the menu short. Refresh already re-applies dropdowns, styling, tab order and the full Master Grid, and Setup
+installs the edit-sync trigger, so do not add separate menu items for those steps.
 
 ## 5 · Data flow
 
@@ -126,7 +129,7 @@ Unavailable day · Unregistered teacher · Unknown class · Over `Max Hours / We
    sheet disagreements, clashes); **show it to the user and wait for approval**.
 4. `npm test`.
 5. Only with the user's explicit permission: commit, `clasp push`, then tell the user to reload the sheet and run
-   **Import All Pre-fill Data** (answer **NO** to load the new built-in data) → **Check For Conflicts**.
+   **📥 Import Timetable** (answer **NO** to load the new built-in data) → **Check For Conflicts**.
 
 ## 9 · Testing
 
@@ -140,8 +143,8 @@ quotas/permissions are not simulated — check those manually (README → "Manua
 |---|---|
 | Any `.gs` file | Reload the sheet |
 | View managers | 🔄 Refresh All Views |
-| `PrefillData.gs` | 📥 Import All Pre-fill Data (answer NO to use the built-in data) |
-| Trigger logic / first deploy of this version | ⚙️ Install Edit Sync Trigger |
+| `PrefillData.gs` | 📥 Import Timetable (answer NO to use the built-in data) |
+| Trigger logic / first deploy of this version | ⚙️ Setup / Repair |
 | Validation | ✅ Check For Conflicts |
 
 ## 11 · Gotchas

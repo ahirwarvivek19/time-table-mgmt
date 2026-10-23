@@ -19,8 +19,12 @@ const CONFIG = {
     MASTER_GRID: 'Master_Grid_View',
     AVAILABILITY: 'Teacher_Availability_Grid',
     COVER: 'Cover_Manager',
+    CHANGE_LOG: 'Change_Log',
     PREFILL_BACKUP: '_Prefill_Data_Backup'
   },
+
+  // One row per period changed from a view or Master_Schedule (written by logChanges_).
+  CHANGE_LOG_HEADERS: ['Time', 'Edited By', 'Edited In', 'Day', 'Period', 'Class', 'Before', 'After'],
 
   DAYS: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
   PERIODS: [1, 2, 3, 4, 5, 6, 7, 8],
@@ -52,8 +56,13 @@ const CONFIG = {
   MAX_SYNCED_CELLS: 400,
   // Unique id of the installable edit trigger recorded by installEditTrigger_().
   PROP_EDIT_TRIGGER: 'EDIT_TRIGGER_UID',
+  // Unique id of the installable change trigger (rows deleted / inserted in Master_Schedule).
+  PROP_CHANGE_TRIGGER: 'CHANGE_TRIGGER_UID',
   // Max wait for another edit to finish (stays well under the 30 s simple-trigger limit).
   LOCK_WAIT_MS: 10000,
+
+  // Data tabs are styled this many rows past the last filled row, so new rows look the same.
+  TABLE_SPARE_ROWS: 100,
 
   FONT: 'Montserrat'
 };
@@ -121,6 +130,11 @@ function getTeacherNames_() {
     });
 }
 
+/** Teacher names A→Z (case-insensitive) for dropdowns and pickers, so a name is easy to find. */
+function getTeacherNamesSorted_() {
+  return getTeacherNames_().sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+}
+
 /**
  * Runs fn while holding the document lock so two people editing at once
  * cannot interleave read-modify-write cycles on Master_Schedule.
@@ -128,7 +142,7 @@ function getTeacherNames_() {
 function withDocumentLock_(fn) {
   const lock = LockService.getDocumentLock();
   if (!lock.tryLock(CONFIG.LOCK_WAIT_MS)) {
-    throw new Error('Another timetable edit is still being processed — please re-enter your change in a few seconds.');
+    throw new Error('Not saved — another timetable edit is still being processed. What you typed is still on screen but was NOT saved: re-enter it in a few seconds.');
   }
   try {
     return fn();

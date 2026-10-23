@@ -101,7 +101,7 @@ function _buildMasterGridOutput_() {
       if (lookup[cls] && lookup[cls][p] && (row.Subject || row.Teacher)) {
         let entry = row.Subject || '';
         if (row.Teacher) entry += ' (' + row.Teacher + ')';
-        lookup[cls][p].push({ day: String(row.Day), entry: entry });
+        lookup[cls][p].push({ day: normalizeDay_(row.Day) || String(row.Day), entry: entry });
       }
     }
   });

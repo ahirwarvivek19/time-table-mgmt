@@ -69,13 +69,20 @@ function validateSchedule_() {
   const roomSlots = {};    // "day|period|room"    → [{i, signature}]
   let splitSlots = 0;      // periods where a class is split into groups
   let combinedLectures = 0; // one teacher, one subject, several sections at once
+  const classSlots = {};   // "day|period|class" → [i] — a class with two rows in one period
 
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
-    const day = String(row[C.DAY - 1]).trim();
+    const day = normalizeDay_(row[C.DAY - 1]) || String(row[C.DAY - 1]).trim();
     const period = String(row[C.PERIOD - 1]).trim();
     const cls = String(row[C.CLASS - 1]).trim();
     if (!day && !period && !cls) continue;
+    if (cls && day && period) {
+      ScheduleParser.splitClasses(cls).forEach(c => {
+        const k = day + '|' + period + '|' + norm(c);
+        (classSlots[k] = classSlots[k] || []).push(i);
+      });
+    }
 
     if (hasClasses && cls) {
       ScheduleParser.splitClasses(cls).forEach(c => {
@@ -135,6 +142,14 @@ function validateSchedule_() {
     }
   });
 
+  // A class with two rows in one period: the views merge them, which can hide a mistake
+  Object.keys(classSlots).forEach(k => {
+    const list = classSlots[k];
+    if (list.length < 2) return;
+    count('Duplicate period');
+    list.forEach(i => add(i, 'Duplicate Period (another row has the same class, day and period)'));
+  });
+
   // Overload (periods/week > max) — counts a combined lecture once
   const load = DataAccess.updateTeacherLoad();
   const overloaded = Object.keys(load)
@@ -150,7 +165,7 @@ function validateSchedule_() {
     const msg = issues[i].join(' / ');
     if (msg) rowsFlagged++;
     statuses.push([msg]);
-    backgrounds.push([msg ? '#FDEDEC' : null]);
+    backgrounds.push([msg ? CLASH_CELL_COLOR : tableRowColor_(i + 1)]);
   }
   sheet.getRange(2, C.CLASH, n, 1).setValues(statuses);
   sheet.getRange(2, C.CLASH, n, 1).setBackgrounds(backgrounds);

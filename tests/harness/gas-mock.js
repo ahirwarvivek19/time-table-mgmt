@@ -76,7 +76,8 @@ class Sheet {
   setName(n) { this._name = n; return this; }
   getLastRow() { for (let r = this._data.length; r >= 1; r--) if (this._data[r - 1].some(v => v !== '')) return r; return 0; }
   getLastColumn() { let max = 0; this._data.forEach(row => { for (let c = row.length; c >= 1; c--) if (row[c - 1] !== '') { max = Math.max(max, c); break; } }); return max; }
-  getMaxRows() { return Math.max(1000, this._data.length); }
+  getMaxRows() { return Math.max(this._maxRows || 1000, this._data.length); }
+  insertRowsAfter(after, n) { this._maxRows = Math.max(this.getMaxRows(), after) + n; return this; }
   getMaxColumns() { return 26; }
   getRange(a, b, c, d) {
     if (typeof a === 'string') { const [r, col] = a1ToRC(a); return new Range(this, r, col, 1, 1); }
@@ -84,6 +85,9 @@ class Sheet {
   }
   getDataRange() { return new Range(this, 1, 1, Math.max(1, this.getLastRow()), Math.max(1, this.getLastColumn())); }
   appendRow(values) { const r = this.getLastRow() + 1; values.forEach((v, i) => this._set(r, i + 1, v)); return this; }
+  deleteRow(r) { this._data.splice(r - 1, 1); return this; }
+  protect() { const p = { warningOnly: false, description: '', setWarningOnly(v) { p.warningOnly = v; return p; }, setDescription(d) { p.description = d; return p; } }; (this._protections = this._protections || []).push(p); return p; }
+  getProtections() { return (this._protections || []).slice(); }
   clear() { this._data = []; this._bg.clear(); this._dv.clear(); this._notes.clear(); this._merges = []; return this; }
   clearContents() { this._data = []; return this; }
   hideSheet() { this._hidden = true; return this; }
@@ -119,7 +123,8 @@ function createEnvironment() {
   const triggers = [];
   let triggerSeq = 0;
 
-  const menuStub = () => { const m = { addItem: () => m, addSeparator: () => m, addSubMenu: () => m, addToUi: () => m }; return m; };
+  const menus = []; // every menu built with createMenu: { title, items: [[label, functionName] | '---'] }
+  const menuStub = title => { const m = { title, items: [], addItem: (l, f) => (m.items.push([l, f]), m), addSeparator: () => (m.items.push('---'), m), addSubMenu: () => m, addToUi: () => m }; menus.push(m); return m; };
   const ui = {
     // alert(msg) or alert(title, msg, buttons). Queue answers for YES/NO dialogs in `answers`.
     alert: (...args) => { alerts.push(args.length > 1 ? args[1] : args[0]); return args.length > 2 ? (answers.shift() || 'YES') : 'OK'; },
@@ -154,7 +159,7 @@ function createEnvironment() {
   const triggerBuilder = (fn) => {
     const t = { fn, type: null };
     const b = {
-      forSpreadsheet: () => b, onEdit: () => { t.type = 'ON_EDIT'; return b; }, onOpen: () => { t.type = 'ON_OPEN'; return b; },
+      forSpreadsheet: () => b, onEdit: () => { t.type = 'ON_EDIT'; return b; }, onOpen: () => { t.type = 'ON_OPEN'; return b; }, onChange: () => { t.type = 'ON_CHANGE'; return b; },
       create: () => { const id = 'uid-' + (++triggerSeq); const trig = { getHandlerFunction: () => fn, getEventType: () => t.type, getUniqueId: () => id }; triggers.push(trig); return trig; },
     };
     return b;
@@ -164,6 +169,7 @@ function createEnvironment() {
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss, getActive: () => ss, getUi: () => ui, newDataValidation: dvBuilder, flush: () => {},
       BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK', DASHED: 'DASHED' },
+      ProtectionType: { SHEET: 'SHEET', RANGE: 'RANGE' },
     },
     LockService: { getDocumentLock: () => ({ waitLock: () => {}, tryLock: () => true, releaseLock: () => {} }) },
     PropertiesService: { getDocumentProperties: () => props, getScriptProperties: () => props },
@@ -171,7 +177,7 @@ function createEnvironment() {
       getProjectTriggers: () => triggers.slice(),
       deleteTrigger: (t) => { const i = triggers.indexOf(t); if (i >= 0) triggers.splice(i, 1); },
       newTrigger: triggerBuilder,
-      EventType: { ON_EDIT: 'ON_EDIT', ON_OPEN: 'ON_OPEN' },
+      EventType: { ON_EDIT: 'ON_EDIT', ON_OPEN: 'ON_OPEN', ON_CHANGE: 'ON_CHANGE' },
     },
     HtmlService: {
       createTemplateFromFile: () => ({ evaluate: () => ({ setWidth() { return this; }, setHeight() { return this; }, setTitle() { return this; }, addMetaTag() { return this; } }) }),
@@ -189,7 +195,7 @@ function createEnvironment() {
     console,
   };
 
-  return { ss, ui, alerts, prompts, answers, properties, triggers, globals };
+  return { ss, ui, alerts, prompts, answers, properties, triggers, globals, menus };
 }
 
 /** Loads every deployable .gs file into one VM context, like Apps Script does. */

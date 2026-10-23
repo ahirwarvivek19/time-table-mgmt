@@ -84,14 +84,15 @@ function apiWebGetTimetable(kind, name) {
 
   readObjects_(ss, CONFIG.SHEETS.SCHEDULE).forEach(row => {
     const p = parseInt(row.Period);
-    if (!grid[row.Day] || !grid[row.Day][p]) return;
+    const day = normalizeDay_(row.Day);
+    if (!grid[day] || !grid[day][p]) return;
     if (kind === 'teacher') {
       if (!ScheduleParser.rowIncludesTeacher(row, match)) return;
-      grid[row.Day][p].push(String(row.Class) + ' · ' + (ScheduleParser.getSubjectForTeacher(row, match) || row.Subject || ''));
+      grid[day][p].push(String(row.Class) + ' · ' + (ScheduleParser.getSubjectForTeacher(row, match) || row.Subject || ''));
     } else {
       if (!ScheduleParser.rowIncludesClass(row, match)) return;
       if (!row.Subject && !row.Teacher) return;
-      grid[row.Day][p].push(String(row.Subject || '') + (row.Teacher ? ' · ' + row.Teacher : ''));
+      grid[day][p].push(String(row.Subject || '') + (row.Teacher ? ' · ' + row.Teacher : ''));
     }
   });
 

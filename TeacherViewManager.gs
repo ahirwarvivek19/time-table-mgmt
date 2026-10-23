@@ -61,7 +61,7 @@ const TeacherViewManager = {
     const b3Cell = sheet.getRange('B3');
     if (teacherNames.length > 0) {
       b3Cell.setDataValidation(
-        SpreadsheetApp.newDataValidation().requireValueInList(teacherNames, true).build()
+        SpreadsheetApp.newDataValidation().requireValueInList(getTeacherNamesSorted_(), true).build()
       );
     }
     b3Cell.setValue(teacherName);
@@ -82,11 +82,12 @@ const TeacherViewManager = {
     });
 
     scheduleData.forEach(row => {
-      if (!row.Day || !row.Period || !lookup[row.Day]) return;
+      const rowDay = normalizeDay_(row.Day); // "monday " still counts as Monday
+      if (!rowDay || !row.Period || !lookup[rowDay]) return;
       const periodInt = parseInt(row.Period);
-      if (!lookup[row.Day][periodInt]) return;
+      if (!lookup[rowDay][periodInt]) return;
       if (!ScheduleParser.rowIncludesTeacher(row, teacherName)) return;
-      lookup[row.Day][periodInt].push({
+      lookup[rowDay][periodInt].push({
         cls: String(row.Class || ''),
         subject: ScheduleParser.getSubjectForTeacher(row, teacherName) || String(row.Subject || '')
       });
@@ -184,17 +185,21 @@ const TeacherViewManager = {
    * @param {string} newValue     Raw cell value typed by user
    * @returns {string} '' on success, otherwise a message explaining why nothing was saved
    */
-  updateMasterFromTeacherView: function(teacherName, day, period, newValue) {
-    return updateTeacherSlot_(teacherName, day, period, newValue);
+  updateMasterFromTeacherView: function(teacherName, day, period, newValue, changes, notices) {
+    return updateTeacherSlot_(teacherName, day, period, newValue, changes, notices);
   }
 };
 
 /**
  * Shared write-back for Teacher_View and Teacher_Day_View.
+ * @param {Array} [changes]  receives {cls, before, after} per changed row (for the change log)
+ * @param {Array} [notices]  receives messages about other teachers this edit affected
  * @returns {string} '' on success, otherwise a reason the edit was rejected
  */
-function updateTeacherSlot_(teacherName, day, period, newValue) {
+function updateTeacherSlot_(teacherName, day, period, newValue, changes, notices) {
   if (!teacherName || !day || !period) return '';
+  changes = changes || [];
+  notices = notices || [];
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const msSheet = ss.getSheetByName(CONFIG.SHEETS.SCHEDULE);
@@ -209,7 +214,10 @@ function updateTeacherSlot_(teacherName, day, period, newValue) {
   const removeFromRow = i => {
     const res = ScheduleParser.removeTeacher(values[i][C.TEACHER - 1], values[i][C.SUBJECT - 1], teacherName, values[i][C.ROOM - 1]);
     if (!res.removed) return;
-    writeLaneCells_(msSheet, values, i, res);
+    writeLaneCells_(msSheet, values, i, res, changes);
+    if (String(res.subject).trim() && !String(res.teacher).trim()) {
+      notices.push(day + ' P' + period + ': ' + values[i][C.CLASS - 1] + ' ' + res.subject + ' now has no teacher.');
+    }
   };
 
   // ── FREE / empty: remove teacher from this slot ─────────────────────────
@@ -280,19 +288,23 @@ function updateTeacherSlot_(teacherName, day, period, newValue) {
     if (rowIndex > 0) {
       const res = ScheduleParser.assignTeacher(values[rowIndex][C.TEACHER - 1], values[rowIndex][C.SUBJECT - 1], teacherName, targetSubject, values[rowIndex][C.ROOM - 1]);
       if (res.error) { errors.push(className + ': ' + res.error); return; }
-      writeLaneCells_(msSheet, values, rowIndex, res);
+      writeLaneCells_(msSheet, values, rowIndex, res, changes);
+      (res.replaced || []).forEach(r => notices.push(day + ' P' + period + ': ' + className + ' ' + (r.subject || '') + ' — ' + r.teacher + ' replaced by ' + teacherName + '.'));
     } else {
       const row = [day, period, className, classData['Academic Tier'] || '', targetSubject, teacherName, classData['Room Assigned'] || '', ''];
       msSheet.appendRow(row);
       values.push(row);
+      changes.push({ cls: className, before: '', after: describeLesson_(targetSubject, teacherName) });
     }
+    if (targetSubject) addMissingSubjects_([targetSubject]);
   });
   return errors.length ? day + ' P' + period + ': ' + errors.join('; ') : '';
 }
 
 /** Writes Subject, Teacher and Room (columns E:G) of Master_Schedule row index i (0-based in values). */
-function writeLaneCells_(msSheet, values, i, res) {
+function writeLaneCells_(msSheet, values, i, res, changes) {
   const C = CONFIG.COL;
+  if (changes) changes.push({ cls: String(values[i][C.CLASS - 1]), before: describeRow_(values[i]), after: describeLesson_(res.subject, res.teacher) });
   msSheet.getRange(i + 1, C.SUBJECT, 1, 3).setValues([[res.subject, res.teacher, res.room]]);
   values[i][C.SUBJECT - 1] = res.subject;
   values[i][C.TEACHER - 1] = res.teacher;

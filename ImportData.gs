@@ -83,52 +83,13 @@ function importSchedule_(data) {
   };
 }
 
-/** Rebuilds dropdowns, views and the Master Grid after an import. */
+/** Rebuilds dropdowns, views, styling and the Master Grid after an import. */
 function afterImport_() {
-  applyMasterScheduleDropdowns_(/* silent= */ true);
   refreshAllViews(/* silent= */ true);
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const grid = ss.getSheetByName(CONFIG.SHEETS.MASTER_GRID);
-  if (!grid || grid.getLastRow() === 0) generateMasterGrid(/* silent= */ true);
 }
 
 function loadPrefill_(source) {
   return source === 'backup' ? readPrefillBackup_() : readDefaultPrefill_();
-}
-
-/**
- * Imports only the Teacher Registry into the Teachers tab.
- * @param {boolean} [silent=false]
- */
-function importTeachersData(silent) {
-  const source = choosePrefillSource_();
-  if (!source) return;
-  const data = loadPrefill_(source);
-  const count = withDocumentLock_(() => importTeachers_(data));
-  afterImport_();
-  if (!silent) {
-    SpreadsheetApp.getUi().alert('Import Complete!\n• Teachers loaded: ' + count + ' (' + (source === 'backup' ? 'saved snapshot' : 'built-in data') + ')');
-  }
-}
-
-/**
- * Imports Classes, Subjects and Master_Schedule.
- * @param {boolean} [silent=false]
- */
-function importScheduleData(silent) {
-  const source = choosePrefillSource_();
-  if (!source) return;
-  const data = loadPrefill_(source);
-  const counts = withDocumentLock_(() => importSchedule_(data));
-  afterImport_();
-  if (!silent) {
-    SpreadsheetApp.getUi().alert(
-      'Import Complete! (' + (source === 'backup' ? 'saved snapshot' : 'built-in data') + ')\n' +
-      '• Classes  : ' + counts.classes + '\n' +
-      '• Subjects : ' + counts.subjects + '\n' +
-      '• Schedule : ' + counts.schedule + ' entries'
-    );
-  }
 }
 
 /**
@@ -213,62 +174,6 @@ function saveCurrentSheetAsPrefillData() {
     '• Teachers : ' + teacherRows.length + '\n' +
     '• Subjects : ' + subjectRows.length + '\n' +
     '• Schedule : ' + scheduleRows.length + ' entries\n\n' +
-    'Data Import will offer this snapshot or the built-in timetable.'
-  );
-}
-
-/** Deletes the saved snapshot so imports use the built-in data. */
-function resetPrefillDataToDefault() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  const backupSheet = ss.getSheetByName(CONFIG.SHEETS.PREFILL_BACKUP);
-
-  if (backupSheet) {
-    ss.deleteSheet(backupSheet);
-    PropertiesService.getDocumentProperties().deleteProperty('PREFILL_SAVED_AT');
-    ui.alert(
-      '🔄 Reset Complete!\n\n' +
-      'The saved snapshot has been removed. Data Import will now load the built-in timetable.'
-    );
-  } else {
-    ui.alert('No saved snapshot exists. Data Import already uses the built-in timetable.');
-  }
-}
-
-/**
- * Formats all teacher names across Teachers, Master_Schedule and the saved
- * snapshot into Title Case.
- */
-function formatAllTeacherNames() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  const S = CONFIG.SHEETS;
-
-  const formatColumn = (sheet, col) => {
-    if (!sheet || sheet.getLastRow() < 2) return 0;
-    const range = sheet.getRange(2, col, sheet.getLastRow() - 1, 1);
-    let changed = 0;
-    const updated = range.getValues().map(r => {
-      const formatted = ScheduleParser.formatTeacherName(r[0]);
-      if (formatted !== r[0]) changed++;
-      return [formatted];
-    });
-    range.setValues(updated);
-    return changed;
-  };
-
-  const teacherCount = formatColumn(ss.getSheetByName(S.TEACHERS), 1);
-  const scheduleCount = formatColumn(ss.getSheetByName(S.SCHEDULE), CONFIG.COL.TEACHER);
-  const backupSheet = ss.getSheetByName(S.PREFILL_BACKUP);
-  formatColumn(backupSheet, 5);                         // snapshot: Teacher Name
-  formatColumn(backupSheet, 12 + CONFIG.COL.TEACHER);   // snapshot: schedule Teacher (col R)
-
-  refreshAllViews(/* silent= */ true);
-
-  ui.alert(
-    '✏️ Teacher Names Formatted to Title Case!\n\n' +
-    '• Teachers sheet updated : ' + teacherCount + ' names\n' +
-    '• Master Schedule updated: ' + scheduleCount + ' entries\n\n' +
-    'All dashboards & dropdowns have been refreshed.'
+    '📥 Import Timetable will now ask which one to load: this snapshot or the built-in timetable.'
   );
 }

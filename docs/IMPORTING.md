@@ -1,6 +1,6 @@
 # Importing a timetable
 
-Turns the school's Excel timetable into `PrefillData.gs`, which the sheet loads with **📥 Import All Pre-fill Data**.
+Turns the school's Excel timetable into `PrefillData.gs`, which the sheet loads with **📥 Import Timetable**.
 
 ## Quick start
 
@@ -9,7 +9,7 @@ npm install
 npm run convert:check    # validate only — fix every error it prints
 npm run convert          # writes PrefillData.gs + docs/TIMETABLE_REVIEW_<label>.md
 npm test
-npx clasp push           # then in the sheet: 📥 Import All Pre-fill Data → NO (built-in data)
+npx clasp push           # then in the sheet: 📥 Import Timetable → NO (built-in data)
 ```
 
 Read the review file before importing. It lists the teachers filled in from the teacher-wise sheet, groups that still have no teacher, where the class-wise and teacher-wise sheets disagree, clashes, teacher load, split periods and combined lectures, and every distinct cell with how it was read.

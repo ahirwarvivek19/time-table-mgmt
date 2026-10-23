@@ -18,8 +18,8 @@
  * Multi-cell edits (paste, drag-fill, deleting a block) are synced cell by cell.
  *
  * Triggers: the simple onEdit trigger has a 30-second limit, which a full
- * cascade can exceed on a large timetable. "Install Edit Sync Trigger" (also run
- * by Setup) adds an installable trigger and records its unique id. From then on
+ * cascade can exceed on a large timetable. "⚙️ Setup / Repair" adds an
+ * installable trigger and records its unique id. From then on
  * only that trigger processes edits: the simple trigger and any other installable
  * onEdit trigger (hand-made, or created by another editor) return immediately,
  * so each edit is processed exactly once.
@@ -73,16 +73,6 @@ function getInstalledEditTriggerUid_() {
   }
 }
 
-/** Menu: installs (or repairs) the installable onEdit trigger. */
-function installEditTrigger() {
-  installEditTrigger_();
-  SpreadsheetApp.getUi().alert(
-    '✅ Edit sync trigger installed.\n\n' +
-    'Edits in the views now sync to Master_Schedule. The trigger runs under your account — ' +
-    'if you ever lose edit access, another editor should run this menu item again.'
-  );
-}
-
 function installEditTrigger_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   // Only editors may (re)point the sync trigger: a viewer's trigger could not write.
@@ -97,6 +87,14 @@ function installEditTrigger_() {
     .forEach(t => ScriptApp.deleteTrigger(t));
   const trigger = ScriptApp.newTrigger('onEdit').forSpreadsheet(ss).onEdit().create();
   PropertiesService.getDocumentProperties().setProperty(CONFIG.PROP_EDIT_TRIGGER, trigger.getUniqueId());
+
+  // Change trigger: refreshes the views after Master_Schedule rows are deleted or inserted
+  // (those never fire onEdit). Same uid scheme, so a duplicate does nothing.
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'onScheduleChange')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  const change = ScriptApp.newTrigger('onScheduleChange').forSpreadsheet(ss).onChange().create();
+  PropertiesService.getDocumentProperties().setProperty(CONFIG.PROP_CHANGE_TRIGGER, change.getUniqueId());
 }
 
 /**
@@ -173,15 +171,32 @@ function handleClassViewEdit(e) {
   const cells = collectEditedCells_(e, 6, 2, 9);
   if (!cells || !cells.length) return;
 
-  withDocumentLock_(() => {
-    cells.forEach(cell => {
-      const dayIndex = Math.floor((cell.row - 6) / 2);
-      if (dayIndex < 0 || dayIndex >= CONFIG.DAYS.length) return;
-      const editType = ((cell.row - 6) % 2 === 0) ? 'Subject' : 'Teacher';
-      ClassViewManager.updateMasterFromClassView(className, CONFIG.DAYS[dayIndex], cell.col - 1, editType, cell.value);
-    });
-    refreshViewsAfterWrite_(e.source, CONFIG.SHEETS.CLASS_VIEW);
+  // A period's Subject and Teacher cells are applied together (one edit per period),
+  // so pasting or clearing both at once is checked as a whole.
+  const edits = {};
+  const order = [];
+  cells.forEach(cell => {
+    const dayIndex = Math.floor((cell.row - 6) / 2);
+    if (dayIndex < 0 || dayIndex >= CONFIG.DAYS.length) return;
+    const key = dayIndex + '|' + (cell.col - 1);
+    if (!edits[key]) { edits[key] = { day: CONFIG.DAYS[dayIndex], period: cell.col - 1, edit: {} }; order.push(key); }
+    edits[key].edit[((cell.row - 6) % 2 === 0) ? 'subject' : 'teacher'] = cell.value;
   });
+  if (!order.length) return;
+
+  const problems = [];
+  withDocumentLock_(() => {
+    order.forEach(key => {
+      const x = edits[key];
+      const res = ClassViewManager.applyClassViewEdit(className, x.day, x.period, x.edit);
+      if (res.error) problems.push(res.error);
+      logChanges_(CONFIG.SHEETS.CLASS_VIEW, x.day, x.period, res.changes);
+    });
+    // Redraw this view too: reverts rejected edits and updates the split/combined/clash colours
+    ClassViewManager.renderClassView(className);
+    afterScheduleChange_(e.source, CONFIG.SHEETS.CLASS_VIEW);
+  });
+  if (problems.length) e.source.toast(problems.join('\n'), 'Not saved', 15);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -206,18 +221,22 @@ function handleTeacherViewEdit(e) {
   if (!cells || !cells.length) return;
 
   const problems = [];
+  const notices = [];
   withDocumentLock_(() => {
     cells.forEach(cell => {
       const dayIndex = cell.row - 6;
       if (dayIndex < 0 || dayIndex >= CONFIG.DAYS.length) return;
-      const err = TeacherViewManager.updateMasterFromTeacherView(teacherName, CONFIG.DAYS[dayIndex], cell.col - 1, cell.value);
+      const day = CONFIG.DAYS[dayIndex];
+      const changes = [];
+      const err = updateTeacherSlot_(teacherName, day, cell.col - 1, cell.value, changes, notices);
       if (err) problems.push(err);
+      logChanges_(CONFIG.SHEETS.TEACHER_VIEW, day, cell.col - 1, changes);
     });
     // Re-render this view too: normalises the typed text and reverts rejected edits
     TeacherViewManager.renderTeacherView(teacherName);
-    refreshViewsAfterWrite_(e.source, CONFIG.SHEETS.TEACHER_VIEW);
+    afterScheduleChange_(e.source, CONFIG.SHEETS.TEACHER_VIEW);
   });
-  if (problems.length) e.source.toast(problems.join('\n'), 'Not saved', 10);
+  toastEditResult_(e.source, problems, notices);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -248,16 +267,20 @@ function handleTeacherDayViewEdit(e) {
   cells.forEach(c => { c.teacher = names[c.row - firstRow][0]; });
 
   const problems = [];
+  const notices = [];
+  const day = normalizeDay_(selectedDay) || CONFIG.DAYS[0];
   withDocumentLock_(() => {
     cells.forEach(cell => {
       if (!cell.teacher) return;
-      const err = TeacherDayViewManager.updateMasterFromTeacherDayView(selectedDay, cell.teacher, cell.col - 1, cell.value);
-      if (err) problems.push(err);
+      const changes = [];
+      const err = updateTeacherSlot_(cell.teacher, day, cell.col - 1, cell.value, changes, notices);
+      if (err) problems.push(cell.teacher + ', ' + err);
+      logChanges_(CONFIG.SHEETS.TEACHER_DAY_VIEW, day, cell.col - 1, changes);
     });
     TeacherDayViewManager.renderTeacherDayView(selectedDay, activeClassFilter);
-    refreshViewsAfterWrite_(e.source, CONFIG.SHEETS.TEACHER_DAY_VIEW);
+    afterScheduleChange_(e.source, CONFIG.SHEETS.TEACHER_DAY_VIEW);
   });
-  if (problems.length) e.source.toast(problems.join('\n'), 'Not saved', 10);
+  toastEditResult_(e.source, problems, notices);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -266,7 +289,149 @@ function handleTeacherDayViewEdit(e) {
 
 function handleMasterScheduleEdit(e) {
   if (e.range.getLastRow() < 2) return; // header-only edit
-  // Teacher/class names may have been added, removed or replaced (including in
-  // multi-teacher cells), so every view showing schedule data is refreshed.
-  withDocumentLock_(() => refreshViewsAfterWrite_(e.source, null));
+  const C = CONFIG.COL;
+  const range = e.range;
+  // Single-cell edits are logged with the old value Sheets passes in (e.oldValue)
+  const single = range.getNumRows() === 1 && range.getNumColumns() === 1;
+  withDocumentLock_(() => {
+    const sheet = range.getSheet();
+    // Day names typed as "monday" / "Mon" are written back as "Monday", so every view
+    // (and the clash check) reads them the same way.
+    if (range.getColumn() <= C.DAY && range.getLastColumn() >= C.DAY) {
+      const first = Math.max(2, range.getRow());
+      const n = range.getLastRow() - first + 1;
+      if (n > 0) {
+        const days = sheet.getRange(first, C.DAY, n, 1).getValues();
+        let changed = false;
+        const fixed = days.map(r => {
+          const d = normalizeDay_(r[0]);
+          if (d && d !== r[0]) { changed = true; return [d]; }
+          return [r[0]];
+        });
+        if (changed) sheet.getRange(first, C.DAY, n, 1).setValues(fixed);
+      }
+    }
+    const problems = [];
+    let logged = false;
+    // A single Subject / Teacher cell goes through the same checks as Class_View
+    // (pick-to-fill on split periods, names, new clashes, groups lining up).
+    if (single && range.getRow() >= 2 && (range.getColumn() === C.SUBJECT || range.getColumn() === C.TEACHER)) {
+      const res = checkMasterScheduleCell_(sheet, range, e.oldValue);
+      if (res) {
+        logged = true;
+        if (res.error) problems.push(res.error);
+        else logChanges_(CONFIG.SHEETS.SCHEDULE, res.day, res.period, res.changes);
+      }
+    }
+    if (!logged && single && range.getRow() >= 2 && range.getColumn() <= C.ROOM) {
+      const row = sheet.getRange(range.getRow(), 1, 1, CONFIG.SCHEDULE_HEADERS.length).getValues()[0];
+      logChanges_(CONFIG.SHEETS.SCHEDULE, normalizeDay_(row[C.DAY - 1]) || row[C.DAY - 1], row[C.PERIOD - 1], [{
+        cls: String(row[C.CLASS - 1]),
+        before: CONFIG.SCHEDULE_HEADERS[range.getColumn() - 1] + ': ' + (e.oldValue == null ? '' : e.oldValue),
+        after: CONFIG.SCHEDULE_HEADERS[range.getColumn() - 1] + ': ' + (e.value == null ? range.getValue() : e.value)
+      }]);
+    }
+    // Teacher/class names may have been added, removed or replaced (including in
+    // multi-teacher cells), so every view showing schedule data is refreshed.
+    afterScheduleChange_(e.source, null);
+    if (problems.length) e.source.toast(problems.join('\n'), 'Not saved', 15);
+  });
+}
+
+/**
+ * Runs a typed Subject / Teacher cell of Master_Schedule through applyClassViewEdit.
+ * The old value is put back first, so the checks see the row as it was; on success the
+ * checked value is written, on failure the old value stays.
+ * Rows still being filled in (no valid day, period or known class yet) are left alone.
+ * @returns {{error: string, changes: Array, day: string, period: number}|null}  null = not checked
+ */
+function checkMasterScheduleCell_(sheet, range, oldValue) {
+  const C = CONFIG.COL;
+  const row = sheet.getRange(range.getRow(), 1, 1, CONFIG.SCHEDULE_HEADERS.length).getValues()[0];
+  const day = normalizeDay_(row[C.DAY - 1]);
+  const period = Number(row[C.PERIOD - 1]);
+  const cls = String(row[C.CLASS - 1] || '').trim();
+  if (!day || CONFIG.PERIODS.indexOf(period) === -1 || !cls) return null;
+  const known = getClassNames_();
+  if (!ScheduleParser.splitClasses(cls).every(c => known.some(k => ScheduleParser.sameName(k, c)))) return null;
+
+  const newValue = range.getValue();
+  range.setValue(oldValue == null ? '' : oldValue);
+  const edit = range.getColumn() === C.SUBJECT ? { subject: newValue } : { teacher: newValue };
+  const res = ClassViewManager.applyClassViewEdit(cls, day, period, edit, { keepEmptyRow: true, onlyRow: range.getRow() });
+  return { error: res.error, changes: res.changes, day: day, period: period };
+}
+
+// ─────────────────────────────────────────────────────────
+// ROWS DELETED / INSERTED (onChange)
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Deleting a Master_Schedule row removes a period but fires no edit trigger, so the
+ * views would keep showing it. The installable change trigger (added by Setup / Repair)
+ * refreshes everything after rows are removed.
+ */
+function onScheduleChange(e) {
+  if (!e) return;
+  const installedUid = getInstalledChangeTriggerUid_();
+  if (!installedUid || e.triggerUid !== installedUid) return;
+  if (['REMOVE_ROW', 'INSERT_ROW', 'REMOVE_GRID'].indexOf(String(e.changeType)) === -1) return;
+  const ss = e.source || SpreadsheetApp.getActiveSpreadsheet();
+  withDocumentLock_(() => afterScheduleChange_(ss, null));
+}
+
+function getInstalledChangeTriggerUid_() {
+  try {
+    return PropertiesService.getDocumentProperties().getProperty(CONFIG.PROP_CHANGE_TRIGGER) || '';
+  } catch (err) {
+    return '';
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// AFTER EVERY SAVED EDIT
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Brings everything that depends on Master_Schedule up to date after an edit:
+ * the other views, the Master Grid, Clash Status, each teacher's period count and
+ * the availability grid. Without this the Clash Status column and the load totals
+ * stayed stale until someone ran Check For Conflicts.
+ */
+function afterScheduleChange_(ss, skip) {
+  refreshViewsAfterWrite_(ss, skip);
+  validateSchedule_();
+  const grid = ss.getSheetByName(CONFIG.SHEETS.AVAILABILITY);
+  const day = grid ? availabilityGridDay_(grid) : '';
+  if (day) renderTeacherAvailabilityGrid_(day, true);
+}
+
+/** Shows what was refused and what changed for other teachers, in one toast. */
+function toastEditResult_(ss, problems, notices) {
+  if (problems.length) ss.toast(problems.concat(notices).join('\n'), 'Not saved', 15);
+  else if (notices.length) ss.toast(notices.join('\n'), 'Saved', 10);
+}
+
+/**
+ * Appends one line per changed period to the Change_Log tab (created on first use):
+ * time, editor, where it was edited, day, period, class, before, after.
+ */
+function logChanges_(where, day, period, changes) {
+  if (!changes || !changes.length) return;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEETS.CHANGE_LOG);
+  if (!sheet) {
+    const active = ss.getActiveSheet(); // insertSheet switches tabs; keep the editor where they were
+    sheet = ss.insertSheet(CONFIG.SHEETS.CHANGE_LOG);
+    sheet.getRange(1, 1, 1, CONFIG.CHANGE_LOG_HEADERS.length).setValues([CONFIG.CHANGE_LOG_HEADERS]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    if (active) ss.setActiveSheet(active);
+  }
+  let editor = '';
+  try { editor = typeof Session !== 'undefined' ? Session.getActiveUser().getEmail() : ''; } catch (err) { editor = ''; }
+  const now = new Date();
+  const rows = changes.filter(c => c.before !== c.after)
+    .map(c => [now, editor || '(unknown)', where, day, period, c.cls, c.before, c.after]);
+  if (!rows.length) return;
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
 }

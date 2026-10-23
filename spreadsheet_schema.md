@@ -1,6 +1,6 @@
 # Spreadsheet Schema
 
-All tabs are created by **⚙️ Setup & Utilities → Setup Spreadsheets (Run Once)** (`setupInitialSpreadsheet()`).
+All tabs are created by **⚙️ Setup / Repair** (`setupInitialSpreadsheet()`).
 Names and column positions are defined once in `Config.gs` (`CONFIG.SHEETS`, `CONFIG.COL`).
 
 ## Data tabs (admin-edited)
@@ -46,4 +46,5 @@ Column A `Subject Name` feeds the subject dropdowns. Multi-subject cells (`Hindi
 | `Master_Grid_View` | No | One row per class; each cell lists entries with the days they run (`[Mon,Tue]`). |
 | `Teacher_Availability_Grid` | No | Generated on demand for one day. |
 | `Cover_Manager` | Append-only | Date, Absent Teacher, Period, Class to Cover, Suggested Available Teachers, Assigned Cover Teacher. |
-| `_Prefill_Data_Backup` | Hidden | Snapshot from **Save Current Sheet as Pre-fill Data** (A:C classes, E:I teachers, K subjects, M:T schedule). |
+| `Change_Log` | Append-only, written by the script | Time, Edited By, Edited In, Day, Period, Class, Before, After. One row per changed period. Warning-only protection. |
+| `_Prefill_Data_Backup` | Hidden | Snapshot from **💾 Save Snapshot** (A:C classes, E:I teachers, K subjects, M:T schedule). |

@@ -105,7 +105,7 @@ const TeacherDayViewManager = {
 
     // ── 4. FETCH SCHEDULE DATA ────────────────────────────────────────────
     const scheduleData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE)
-      .filter(r => r.Day === selectedDay);
+      .filter(r => normalizeDay_(r.Day) === normalizeDay_(selectedDay));
 
     // Build lookup: lookup[normalized teacher][period] = Array of { cls, subject }
     const lookup = {};
@@ -247,8 +247,8 @@ const TeacherDayViewManager = {
    * @param {string} newValue
    * @returns {string} '' on success, otherwise why the edit was not saved
    */
-  updateMasterFromTeacherDayView: function(selectedDay, teacherName, period, newValue) {
+  updateMasterFromTeacherDayView: function(selectedDay, teacherName, period, newValue, changes, notices) {
     // Same rules as Teacher_View ("Class - Subject", "FREE", combined "11th A, 11th B - IP")
-    return updateTeacherSlot_(teacherName, normalizeDay_(selectedDay), period, newValue);
+    return updateTeacherSlot_(teacherName, normalizeDay_(selectedDay), period, newValue, changes, notices);
   }
 };

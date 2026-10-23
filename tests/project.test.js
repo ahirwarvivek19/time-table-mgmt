@@ -43,7 +43,7 @@ const slot = (ss, cls, day, period) => scheduleRows(ss).find(r => r[2] === cls &
 
 // ───────────────────────────────────────────── import
 
-test('Import All Pre-fill Data loads the 2026-27 timetable and renders every view', () => {
+test('Import Timetable loads the 2026-27 timetable and renders every view', () => {
   const { ss, env } = imported();
   assert.equal(ss.getSheetByName('Master_Schedule').getLastRow() - 1, 1344);
   assert.equal(ss.getSheetByName('Classes').getLastRow() - 1, 28);
@@ -69,7 +69,7 @@ test('2026-27 import: new bell times in the headers; 11th C medium groups show a
   assert.equal(cv.getRange(7, 2).getValue(), 'Ekta Gour / Rajesh Kumar Bairagi');
   const note = cv.getRange(6, 2).getNote();
   assert.match(note, /Split class — 2 groups/);
-  assert.match(note, /Taught together with 11th B, 11th D/);
+  assert.match(note, /Taught together:\n• Hindi \(E\.M\) — Ekta Gour: with 11th B, 11th D/);
   assert.doesNotMatch(note, /Clash/, 'a medium mark on one section only is the same lecture');
   // the fallback bell table in Config.gs matches the generated one
   api.CONFIG.PERIODS.forEach(p => assert.equal(api.periodTime_(p), api.CONFIG.PERIOD_TIMES[p], 'period ' + p));
@@ -156,8 +156,10 @@ test('Teacher_View: moving a period removes the teacher from the old class', () 
   ], ['A Teacher', 'B Teacher']);
   teacherViewEdit(env, api, 'A Teacher', 6, 2, '7th B - Maths'); // Monday P1
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], '', 'no longer in 6th A');
-  assert.equal(slot(ss, '7th B', 'Monday', 1)[5], 'B Teacher / A Teacher');
-  assert.equal(slot(ss, '7th B', 'Monday', 1)[4], 'Science / Maths');
+  // A takes the 7th B period: B Teacher is replaced (and told), not silently paired up
+  assert.equal(slot(ss, '7th B', 'Monday', 1)[5], 'A Teacher');
+  assert.equal(slot(ss, '7th B', 'Monday', 1)[4], 'Maths');
+  assert.ok(env.ss.toasts.some(t => /B Teacher replaced by A Teacher/.test(t.msg) && /6th A Maths now has no teacher/.test(t.msg)));
 });
 
 test('Teacher_View: changing one teacher\'s subject keeps the other optional subjects', () => {
@@ -197,7 +199,7 @@ test('Teacher_Day_View uses the same write-back rules', () => {
   const range = sheet.getRange(rowB, 4); // Period 3
   range.setValue('6th A - Maths');
   api.onEdit(editEvent(env, range, { triggerUid: env.properties.EDIT_TRIGGER_UID }));
-  assert.equal(slot(ss, '6th A', 'Tuesday', 3)[5], 'A Teacher / B Teacher');
+  assert.equal(slot(ss, '6th A', 'Tuesday', 3)[5], 'B Teacher', 'B takes the period (same replace rule as Teacher_View)');
 });
 
 // ───────────────────────────────────────────── class view & multi-cell edits
@@ -240,7 +242,8 @@ test('simple onEdit steps aside once the installable trigger exists (no double p
   assert.ok(env.properties.EDIT_TRIGGER_UID, 'setup installed and recorded the trigger');
   assert.equal(env.triggers.filter(t => t.getHandlerFunction() === 'onEdit').length, 1);
   api.installEditTrigger_();
-  assert.equal(env.triggers.length, 1, 're-install does not duplicate');
+  assert.equal(env.triggers.filter(t => t.getHandlerFunction() === 'onEdit').length, 1, 're-install does not duplicate');
+  assert.equal(env.triggers.filter(t => t.getHandlerFunction() === 'onScheduleChange').length, 1, 'one change trigger');
 
   api.ClassViewManager.renderClassView('6th A');
   const range = ss.getSheetByName('Class_View').getRange(6, 2);
@@ -325,8 +328,9 @@ test('ScheduleParser.assignTeacher / removeTeacher keep teacher↔subject pairs 
   const ts = o => { const r = { teacher: o.teacher, subject: o.subject }; if ('removed' in o) r.removed = o.removed; return r; };
   const P = { assignTeacher: (...a) => ts(P0.assignTeacher(...a)), removeTeacher: (...a) => ts(P0.removeTeacher(...a)), rowIncludesTeacher: (...a) => P0.rowIncludesTeacher(...a) };
   assert.deepEqual(plain(P.assignTeacher('', 'Maths', 'A', '')), { teacher: 'A', subject: 'Maths' });
-  assert.deepEqual(plain(P.assignTeacher('A', 'Hindi', 'B', 'Hindi')), { teacher: 'A / B', subject: 'Hindi' });
-  assert.deepEqual(plain(P.assignTeacher('A', 'Hindi', 'B', 'IT')), { teacher: 'A / B', subject: 'Hindi / IT' });
+  assert.deepEqual(plain(P.assignTeacher('A', 'Hindi', 'B', 'Hindi')), { teacher: 'B', subject: 'Hindi' });
+  assert.deepEqual(plain(P.assignTeacher('A', 'Hindi', 'B', 'IT')), { teacher: 'B', subject: 'IT' });
+  assert.deepEqual(plain(P.assignTeacher('A', 'Hindi', 'B', '')), { teacher: 'B', subject: 'Hindi' });
   assert.deepEqual(plain(P.assignTeacher('A / B', 'Hindi / IT', 'b', 'Beauty')), { teacher: 'A / B', subject: 'Hindi / Beauty' });
   assert.deepEqual(plain(P.removeTeacher('A / B', 'Hindi / IT', 'A')), { teacher: 'B', subject: 'IT', removed: true });
   assert.deepEqual(plain(P.removeTeacher('A / B', 'Science', 'B')), { teacher: 'A', subject: 'Science', removed: true });
@@ -411,4 +415,69 @@ test('Cover manager rejects non-school dates, busy cover teachers and unknown na
   ss.getSheetByName('Cover_Manager').appendRow([new Date(2026, 9, 12), 'Absent T', 1, '6th A', '', 'Free T']);
   assert.deepEqual(plain(api.apiGetCoversForDate('2026-10-12')), [{ period: 1, classToCover: '6th A', absentTeacher: 'Absent T', coverTeacher: 'Free T' }]);
   assert.equal(api.dayNameForDate_('2026-02-31'), '');
+});
+
+// ───────────────────────────────────────────── menu and styling
+
+test('Menu is trimmed to the everyday actions, and every item points at a real function', () => {
+  const env = createEnvironment();
+  const { api } = loadProject(ROOT, env);
+  api.onOpen();
+  assert.equal(env.menus.length, 1, 'one menu, no submenus');
+  const items = env.menus[0].items.filter(i => i !== '---');
+  assert.deepEqual(items.map(i => i[1]), [
+    'refreshAllViews', 'runValidation', 'generateTeacherAvailabilityGrid', 'openCoverManagerUI',
+    'importExcelData', 'saveCurrentSheetAsPrefillData', 'setupInitialSpreadsheet'
+  ]);
+  items.forEach(([label, fn]) => assert.equal(typeof api[fn], 'function', label + ' → ' + fn));
+});
+
+test('Data tabs are styled down to the last sheet row, and refresh keeps the clash highlights', () => {
+  const { api, ss } = imported();
+  const res = api.validateSchedule_();
+  assert.ok(res.rowsFlagged > 0, 'the built-in data has clashes to highlight');
+  api.refreshAllViews(true);
+
+  const ms = ss.getSheetByName('Master_Schedule');
+  const status = ms.getRange(2, 8, ms.getLastRow() - 1, 1).getValues();
+  let red = 0;
+  status.forEach(([s], i) => {
+    const bg = ms.getRange(i + 2, 8).getBackground();
+    if (String(s).trim()) { red++; assert.equal(bg, '#FDEDEC', 'flagged row ' + (i + 2)); }
+    else assert.equal(bg, i % 2 === 0 ? '#F8F9FA' : '#FFFFFF', 'clean row ' + (i + 2) + ' keeps its zebra colour');
+  });
+  assert.equal(red, res.rowsFlagged);
+
+  // Rows below the data (where view edits and imports append) are already styled
+  const below = ms.getLastRow() + 3;
+  assert.equal(ms._bg.get(below + ',1'), below % 2 === 0 ? '#F8F9FA' : '#FFFFFF');
+  const teachers = ss.getSheetByName('Teachers');
+  assert.ok(teachers._bg.has((teachers.getLastRow() + 10) + ',5'), 'Teachers body styled past the last name');
+});
+
+test('Refresh rebuilds the Master Grid, so its rows match the classes after one is removed', () => {
+  const { api, ss } = imported();
+  const grid = ss.getSheetByName('Master_Grid_View');
+  const before = grid.getLastRow();
+  const classes = ss.getSheetByName('Classes');
+  const last = classes.getLastRow();
+  const removed = classes.getRange(last, 1).getValue();
+  classes.getRange(last, 1, 1, 3).clearContent();
+  const ms = ss.getSheetByName('Master_Schedule');
+  const rows = ms.getRange(2, 1, ms.getLastRow() - 1, 8).getValues().filter(r => r[2] !== removed);
+  ms.getRange(2, 1, ms.getLastRow() - 1, 8).clearContent();
+  ms.getRange(2, 1, rows.length, 8).setValues(rows);
+  api.refreshAllViews(true);
+  assert.ok(grid.getLastRow() < before, 'grid shrank');
+  const text = grid.getRange(1, 1, grid.getLastRow(), grid.getLastColumn()).getValues().flat().join('|');
+  assert.ok(!text.includes(removed), removed + ' is gone from the grid');
+});
+
+test('Teacher Availability accepts schedule days written in any case', () => {
+  const { api, ss, env } = small([['monday', 1, '6th A', 'Middle', 'Maths', 'T One', '', '']], ['T One', 'T Two']);
+  env.prompts.push('Monday');
+  api.generateTeacherAvailabilityGrid();
+  const g = ss.getSheetByName('Teacher_Availability_Grid');
+  const row = g.getRange(1, 1, g.getLastRow(), 2).getValues().find(r => r[0] === 'T One');
+  assert.match(String(row[1]), /^BUSY/);
 });

@@ -9,5 +9,6 @@ preview/**
 *.xlsx
 *.md
 .vscode/**
+.github/**
 templates/**
 *.csv

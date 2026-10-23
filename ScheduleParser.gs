@@ -279,8 +279,11 @@ const ScheduleParser = {
     const isOwn = c => ownClasses.indexOf(this.normalizeName(c)) !== -1;
     const lanes = this.mergeLanes(own);
     const combinedWith = [], clashes = [];
+    // Which other sections share each group. Kept per group, because in a split period
+    // the English group may be shared with 11th B while the IT group is shared with 11th C.
+    const shared = lanes.map(() => []);
     const seenTeacher = {};
-    lanes.forEach(lane => lane.teachers.forEach(t => {
+    lanes.forEach((lane, laneIdx) => lane.teachers.forEach(t => {
       const key = this.normalizeName(t);
       if (seenTeacher[key]) return;
       seenTeacher[key] = true;
@@ -295,17 +298,82 @@ const ScheduleParser = {
       if (this.classifyTeacherSlot(entries).clash) {
         clashes.push(t + ' also has ' + others.map(e => e.cls + ' (' + e.subject + ')').join(', '));
       } else {
-        others.forEach(e => { if (combinedWith.indexOf(e.cls) === -1) combinedWith.push(e.cls); });
+        others.forEach(e => {
+          if (combinedWith.indexOf(e.cls) === -1) combinedWith.push(e.cls);
+          if (shared[laneIdx].indexOf(e.cls) === -1) shared[laneIdx].push(e.cls);
+        });
       }
     }));
+    const order = c => this._classOrderKey(c);
+    combinedWith.sort((a, b) => order(a).localeCompare(order(b)));
+    shared.forEach(list => list.sort((a, b) => order(a).localeCompare(order(b))));
     const lines = [];
     if (lanes.length > 1) {
       lines.push('Split class — ' + lanes.length + ' groups:');
       lanes.forEach(l => lines.push('• ' + (l.subject || '?') + ' — ' + (l.teachers.join(' + ') || 'no teacher') + (l.room ? ' · Room ' + l.room : '')));
     }
-    if (combinedWith.length) lines.push('Taught together with ' + combinedWith.join(', '));
+    const sharedLanes = lanes.map((l, i) => ({ subject: l.subject, teachers: l.teachers, classes: shared[i] })).filter(s => s.classes.length);
+    if (sharedLanes.length) {
+      lines.push('Taught together:');
+      sharedLanes.forEach(s => lines.push('• ' + (s.subject || '?') + ' — ' + (s.teachers.join(' + ') || 'no teacher') + ': with ' + s.classes.join(', ')));
+    }
     clashes.forEach(c => lines.push('⚠ Clash: ' + c));
-    return { lanes: lanes, split: lanes.length > 1, combinedWith: combinedWith, clashes: clashes, note: lines.join('\n') };
+    return { lanes: lanes, split: lanes.length > 1, combinedWith: combinedWith, sharedLanes: sharedLanes, clashes: clashes, note: lines.join('\n') };
+  },
+
+  /**
+   * Multi-select with a normal dropdown: on a split period, a teacher picked from the
+   * dropdown fills the NEXT group that has no teacher yet, instead of replacing the cell.
+   *   old "Asha / -"  + pick "Bina", 2 groups  → "Asha / Bina"
+   *   old ""          + pick "Asha", 3 groups  → "Asha / - / -"
+   *   old "Asha / Bina", 2 groups (all filled) → error: clear the cell to start again
+   * @param {string} oldTeacherStr  Teacher cell before the pick
+   * @param {string} picked         the one name picked
+   * @param {number} groups         number of subjects (groups) in the period
+   * @returns {{teacher: string, error?: string}}
+   */
+  fillNextGroup: function(oldTeacherStr, picked, groups) {
+    const name = String(picked == null ? '' : picked).trim();
+    const lanes = String(oldTeacherStr == null ? '' : oldTeacherStr).split('/').map(s => s.trim());
+    const cells = lanes.length === 1 && !lanes[0] ? [] : lanes;
+    if (cells.length > groups) return { teacher: String(oldTeacherStr), error: 'more teacher groups than subjects — fix the teacher cell by typing it in full' };
+    if (cells.some(l => this.splitCoTeachers(l).some(t => this.sameName(t, name)))) {
+      return { teacher: String(oldTeacherStr) }; // already there: picking again changes nothing
+    }
+    while (cells.length < groups) cells.push(this.EMPTY_LANE);
+    const free = cells.findIndex(l => this._isEmptyMark(l));
+    if (free === -1) {
+      return { teacher: String(oldTeacherStr), error: 'all ' + groups + ' groups already have a teacher — clear the teacher cell and pick them again in subject order, or type the list' };
+    }
+    cells[free] = name;
+    return { teacher: cells.join(' / ') };
+  },
+
+  /** Sort key that puts "6th A" before "10th A" (grade number, then section). */
+  _classOrderKey: function(cls) {
+    const s = String(cls == null ? '' : cls).trim();
+    const m = s.match(/^(\d+)/);
+    return m ? ('000' + m[1]).slice(-3) + s.slice(m[1].length).toLowerCase() : 'zzz' + s.toLowerCase();
+  },
+
+  /**
+   * Checks a typed Subject + Teacher pair before it is saved, so subject i still belongs
+   * to teacher group i. Returns '' when it can be saved, otherwise the reason.
+   *   "Hindi / IT"  + "Asha / Bina + Chetan"  → ok (2 groups, 2 teacher groups)
+   *   "Hindi / IT"  + "Deepa"                 → rejected: who teaches which group?
+   *   "Hindi / IT / Art" + "Asha / Bina"      → rejected: 3 groups, 2 teacher groups
+   *   "Science"     + "Asha / Bina"           → ok (two teachers share one class)
+   */
+  checkLaneText: function(subjectStr, teacherStr) {
+    const subjects = this.splitList(subjectStr);
+    const teacherLanes = this.splitList(teacherStr);
+    if (subjects.length > 1 && teacherLanes.length && teacherLanes.length !== subjects.length) {
+      return 'this period has ' + subjects.length + ' groups (' + subjects.join(' / ') + ') but ' + teacherLanes.length +
+        ' teacher group' + (teacherLanes.length === 1 ? '' : 's') + '. Type one teacher group per subject in the same order, ' +
+        'separated by " / " (use " + " for two teachers sharing a group), e.g. "' +
+        subjects.map((s, i) => 'Teacher ' + (i + 1)).join(' / ') + '"';
+    }
+    return '';
   },
 
   /**
@@ -434,64 +502,79 @@ const ScheduleParser = {
   },
 
   /**
-   * Adds (or updates) a teacher in a row, optionally with the subject they teach,
-   * without disturbing the other lanes.
+   * Puts a teacher into a row from a teacher's own view (Teacher_View / Teacher_Day_View).
+   * The teacher TAKES the period: whoever taught that group before is replaced and
+   * listed in `replaced`, so the edit never silently turns into a co-teacher or a new
+   * split group. Co-teachers ("A + B") and new split groups are set up in Class_View.
    *
-   *  - nobody assigned yet            → this teacher owns the slot
-   *  - teacher already there + subject → their lane's subject changes
-   *  - new teacher + an existing lane's subject → co-teacher of that lane
-   *  - new teacher + a new subject     → a new lane (the class is now split)
-   *  - new teacher, no subject         → co-teacher when the slot has one lane
+   *  - nobody assigned yet, one group        → this teacher owns the slot (typed subject wins)
+   *  - teacher already there + new subject   → their own group's subject changes
+   *  - teacher already there + another group's subject → they move to that group, replacing its teacher
+   *  - new teacher, one group                → replaces that group's teacher(s); a typed subject replaces it too
+   *  - new teacher, split period             → takes the group whose subject they typed;
+   *                                            no subject / unknown subject is refused
    *
    * Rows whose lanes don't line up (3 teachers / 2 subjects) are left unchanged.
    *
-   * @returns {{teacher: string, subject: string, room: string, error?: string}}
+   * @returns {{teacher: string, subject: string, room: string, replaced: Array<{teacher: string, subject: string}>, error?: string}}
    */
   assignTeacher: function(teacherStr, subjectStr, teacher, subject, roomStr) {
     subject = String(subject || '').trim();
     const parsed = this.parseLanes({ Teacher: teacherStr, Subject: subjectStr, Room: roomStr });
     const lanes = parsed.lanes;
+    const replaced = [];
     const done = () => {
       const out = this.formatLanes(lanes);
-      return { teacher: out.teacher, subject: out.subject, room: this._keepRoom(roomStr, out.room, parsed) };
+      return { teacher: out.teacher, subject: out.subject, room: this._keepRoom(roomStr, out.room, parsed), replaced: replaced };
     };
     const unchanged = (error) => {
-      const r = { teacher: String(teacherStr == null ? '' : teacherStr), subject: String(subjectStr == null ? '' : subjectStr), room: String(roomStr == null ? '' : roomStr) };
+      const r = { teacher: String(teacherStr == null ? '' : teacherStr), subject: String(subjectStr == null ? '' : subjectStr), room: String(roomStr == null ? '' : roomStr), replaced: [] };
       if (error) r.error = error;
       return r;
     };
+    const take = lane => {
+      lane.teachers.filter(t => !this.sameName(t, teacher)).forEach(t => replaced.push({ teacher: t, subject: lane.subject }));
+      lane.teachers = [teacher];
+    };
     if (parsed.mismatch) return unchanged();
-
-    const anyTeacher = lanes.some(l => l.teachers.length);
-    const idx = lanes.findIndex(l => l.teachers.some(t => this.sameName(t, teacher)));
-
-    // Nobody (else) assigned yet → this teacher owns the slot.
-    if (!anyTeacher || (idx !== -1 && lanes.length === 1 && lanes[0].teachers.length === 1)) {
-      return { teacher: teacher, subject: subject || String(subjectStr == null ? '' : subjectStr), room: String(roomStr == null ? '' : roomStr) };
+    if (this.splitList(subject).length > 1) {
+      return unchanged('type one subject here — a period is split into groups in Class_View');
     }
+
+    const idx = lanes.findIndex(l => l.teachers.some(t => this.sameName(t, teacher)));
+    const target = subject ? lanes.findIndex(l => this.sameName(l.subject, subject)) : -1;
+    const groups = () => lanes.map(l => l.subject || '?').join(' / ');
 
     if (idx !== -1) {
       const lane = lanes[idx];
       if (!subject || this.sameName(lane.subject, subject)) return unchanged();
-      const target = lanes.findIndex(l => this.sameName(l.subject, subject));
-      if (lane.teachers.length === 1 && target === -1) {
-        lane.subject = subject;
+      if (target === -1) {
+        if (lane.teachers.length === 1) { lane.subject = subject; return done(); }
+        // A co-teacher leaving to start a group of their own
+        lane.teachers = lane.teachers.filter(t => !this.sameName(t, teacher));
+        lanes.push({ subject: subject, teachers: [teacher], room: lane.room });
         return done();
       }
       lane.teachers = lane.teachers.filter(t => !this.sameName(t, teacher));
-      if (target !== -1) lanes[target].teachers.push(teacher);
-      else lanes.push({ subject: subject, teachers: [teacher], room: lane.room });
+      take(lanes[target]);
       if (lane.teachers.length === 0) lanes.splice(idx, 1);
       return done();
     }
 
-    if (!subject) {
-      if (lanes.length === 1) { lanes[0].teachers.push(teacher); return done(); }
-      return unchanged('this period is split into ' + lanes.length + ' groups — type the subject too, e.g. "Class - Subject"');
+    if (lanes.length <= 1) {
+      const lane = lanes[0] || { subject: '', teachers: [], room: '' };
+      if (!lanes.length) lanes.push(lane);
+      take(lane);
+      if (subject) lane.subject = subject;
+      return done();
     }
-    const target = lanes.findIndex(l => this.sameName(l.subject, subject));
-    if (target !== -1) lanes[target].teachers.push(teacher);
-    else lanes.push({ subject: subject, teachers: [teacher], room: lanes.length === 1 ? lanes[0].room : '' });
+    if (!subject) {
+      return unchanged('this period is split into ' + lanes.length + ' groups (' + groups() + ') — type the subject too, e.g. "Class - ' + lanes[0].subject + '"');
+    }
+    if (target === -1) {
+      return unchanged('this period is split into ' + lanes.length + ' groups (' + groups() + ') — type one of those subjects to take that group, or change the groups in Class_View');
+    }
+    take(lanes[target]);
     return done();
   },
 

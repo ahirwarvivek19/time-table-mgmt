@@ -31,7 +31,7 @@ test('preview page carries every class, teacher and day view as the sheet render
   assert.equal(subject, 'Hindi (E.M) / English (H.M)');
   assert.equal(teacher, 'Ekta Gour / Rajesh Kumar Bairagi');
   assert.equal(bg, '#FEF5E7', 'split colour from Class_View');
-  assert.match(note, /Split class — 2 groups[\s\S]*Taught together with 11th B, 11th D/);
+  assert.match(note, /Split class — 2 groups[\s\S]*Taught together:\n• Hindi \(E\.M\) — Ekta Gour: with 11th B, 11th D/);
   const neha = data.teachers.find(t => t.name === 'Neha Jamidar');
   assert.deepEqual(neha.cells[0][0], ['9th A\nSanskrit', '#FDFEFE']);
   assert.ok(neha.hours > neha.max, 'load and maximum come from the Teachers sheet');

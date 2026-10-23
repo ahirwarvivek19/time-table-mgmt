@@ -62,18 +62,22 @@ test('formatLanes is the inverse of parseLanes', () => {
 test('assignTeacher / removeTeacher on split periods: groups, co-teachers and rooms stay aligned', () => {
   const p = P();
   const pick = o => ({ teacher: o.teacher, subject: o.subject, room: o.room });
-  // co-teacher joins the IT group
-  assert.deepEqual(plain(pick(p.assignTeacher('A / B', 'Hindi / IT', 'C', 'IT', '1 / 2'))), { teacher: 'A / B + C', subject: 'Hindi / IT', room: '1 / 2' });
+  // a new teacher taking the IT group replaces its teacher (no silent co-teacher)
+  const took = p.assignTeacher('A / B', 'Hindi / IT', 'C', 'IT', '1 / 2');
+  assert.deepEqual(plain(pick(took)), { teacher: 'A / C', subject: 'Hindi / IT', room: '1 / 2' });
+  assert.deepEqual(plain(took.replaced), [{ teacher: 'B', subject: 'IT' }]);
   // removing a co-teacher keeps the group
   assert.deepEqual(plain(pick(p.removeTeacher('A / B + C', 'Hindi / IT', 'C', '1 / 2'))), { teacher: 'A / B', subject: 'Hindi / IT', room: '1 / 2' });
   // removing the only teacher of a group removes the group and its room
   assert.deepEqual(plain(pick(p.removeTeacher('A / B', 'Hindi / IT', 'A', '1 / 2'))), { teacher: 'B', subject: 'IT', room: '2' });
-  // new subject = new group
-  assert.deepEqual(plain(pick(p.assignTeacher('A / B', 'Hindi / IT', 'C', 'Beauty', ''))), { teacher: 'A / B / C', subject: 'Hindi / IT / Beauty', room: '' });
+  // a subject the split period does not have is refused (groups are set up in Class_View)
+  assert.match(p.assignTeacher('A / B', 'Hindi / IT', 'C', 'Beauty', '').error, /type one of those subjects/);
   // no subject on a split period cannot be placed
   assert.match(p.assignTeacher('A / B', 'Hindi / IT', 'C', '', '').error, /split into 2 groups/);
-  // moving a co-teacher to another subject
-  assert.deepEqual(plain(pick(p.assignTeacher('A / B + C', 'Hindi / IT', 'C', 'Hindi', ''))), { teacher: 'A + C / B', subject: 'Hindi / IT', room: '' });
+  // a co-teacher moving to the other group takes it over
+  assert.deepEqual(plain(pick(p.assignTeacher('A / B + C', 'Hindi / IT', 'C', 'Hindi', ''))), { teacher: 'C / B', subject: 'Hindi / IT', room: '' });
+  // nobody assigned yet on a split period: the teacher takes the group they name, not the whole slot
+  assert.deepEqual(plain(pick(p.assignTeacher('', 'Business Studies / Accountancy', 'C', 'Accountancy', ''))), { teacher: '- / C', subject: 'Business Studies / Accountancy', room: '' });
 });
 
 test('classifyTeacherSlot: same grade combines, different grade or subject clashes, activities may span grades', () => {
@@ -161,20 +165,27 @@ test('Teacher_View shows a combined lecture once with all sections, and a cross-
   assert.match(String(tv.getRange(7, 7).getValue()), /11th D\nMathematics\n---\n12th D\nMathematics/);
 });
 
-test('Teacher_View edit on a split period: new subject adds a group; a bare class name is rejected with a reason', () => {
+test('Teacher_View edit on a split period: a teacher takes the group they name; unknown subject or bare class is refused', () => {
   const { env, api, ss } = small([
     ['Monday', 1, '9th C', 'Secondary', 'Hindi / IT', 'Rubal Verma / Indira Mathur', '', ''],
     ['Monday', 1, '9th D', 'Secondary', 'English', 'Y', '', ''],
   ], ['Rubal Verma', 'Indira Mathur', 'X', 'Y']);
+  // A subject the period does not have is refused, not added as a new group
   teacherViewEdit(env, api, 'X', 6, 2, '9th C - Beauty');
   let r = rows(ss)[0];
-  assert.deepEqual([r[4], r[5]], ['Hindi / IT / Beauty', 'Rubal Verma / Indira Mathur / X']);
+  assert.deepEqual([r[4], r[5]], ['Hindi / IT', 'Rubal Verma / Indira Mathur']);
+  assert.ok(env.ss.toasts.some(t => /type one of those subjects/.test(t.msg)));
+  // Naming an existing group replaces its teacher, and says so
+  teacherViewEdit(env, api, 'X', 6, 2, '9th C - IT');
+  r = rows(ss)[0];
+  assert.deepEqual([r[4], r[5]], ['Hindi / IT', 'Rubal Verma / X']);
+  assert.ok(env.ss.toasts.some(t => t.title === 'Saved' && /Indira Mathur replaced by X/.test(t.msg)));
   // Y has 9th D; typing just "9th C" cannot pick a group, so nothing changes anywhere
   teacherViewEdit(env, api, 'Y', 6, 2, '9th C');
   r = rows(ss);
   assert.equal(r[1][5], 'Y', 'Y was not removed from 9th D');
-  assert.equal(r[0][5], 'Rubal Verma / Indira Mathur / X');
-  assert.ok(env.ss.toasts.some(t => /split into 3 groups/.test(t.msg)));
+  assert.equal(r[0][5], 'Rubal Verma / X');
+  assert.ok(env.ss.toasts.some(t => /split into 2 groups/.test(t.msg)));
 });
 
 // ───────────────────────────────────────────── Class_View markers
@@ -213,7 +224,7 @@ test('Class_View colours split / combined / clash cells and explains them in a n
   const cv = env.ss.getSheetByName('Class_View');
   const cell = p => cv.getRange(6, 1 + p); // Monday subject row
   assert.equal(cell(1).getBackground(), '#F5EEF8');
-  assert.equal(cell(1).getNote(), 'Taught together with 9th D');
+  assert.equal(cell(1).getNote(), 'Taught together:\n• Social Science — Rubal Verma: with 9th D');
   assert.equal(cell(2).getBackground(), '#FEF5E7');
   assert.equal(cell(2).getValue(), 'Hindi / IT');
   assert.equal(cv.getRange(7, 3).getValue(), 'Indira Mathur / X');
