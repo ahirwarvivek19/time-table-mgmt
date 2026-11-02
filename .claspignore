@@ -12,3 +12,6 @@ preview/**
 .github/**
 templates/**
 *.csv
+# Node scripts (e.g. an old gen.js) are not Apps Script: one `require(...)` at the top
+# stops the whole project loading, and the Timetable menu disappears
+*.js
