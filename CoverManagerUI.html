@@ -67,6 +67,10 @@
       var state = { day: '', covers: [] };
 
       function $(id) { return document.getElementById(id); }
+      function sameName(a, b) {
+        var n = function (s) { return String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase(); };
+        return n(a) === n(b);
+      }
       function el(tag, attrs, text) {
         var node = document.createElement(tag);
         Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
@@ -141,7 +145,11 @@
           header.appendChild(el('strong', {}, row.Class + (row.Subject ? ' (' + row.Subject + ')' : '')));
           card.appendChild(header);
 
-          var existing = state.covers.filter(function (c) { return c.period === row.Period && c.classToCover === row.Class; })[0];
+          // Names compared like the server does (case and spacing ignored); the absent teacher is part
+          // of the key, so each absent teacher of a split period gets their own cover
+          var existing = state.covers.filter(function (c) {
+            return c.period === row.Period && sameName(c.classToCover, row.Class) && sameName(c.absentTeacher, absent);
+          })[0];
           if (existing) {
             card.className += ' covered';
             card.appendChild(el('div', { 'class': 'ok' }, '✓ Covered by ' + existing.coverTeacher));

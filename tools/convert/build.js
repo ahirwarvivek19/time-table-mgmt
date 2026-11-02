@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { DAYS, TEACHERS, CLASSES, PERIODS } = require('./registry');
+const { DAYS, TEACHERS, CLASSES, PERIODS, BREAKS } = require('./registry');
 const { parseClassBlocks } = require('./class-blocks');
 const { parseFlat, toFlatCsv } = require('./flat');
 const { parseTeacherwise, fillFromClaims, compare, baseOf } = require('./teacherwise');
@@ -118,7 +118,7 @@ function buildAll(opts = {}) {
     p.name = `${FORMAT_NAMES[p.src.format] || p.src.format} (${path.basename(p.src.file)}${p.src.sheet ? ', sheet ' + p.src.sheet : ''})`;
     p.issues.forEach(x => errors.push(`${p.name}: ${x}`));
     if (p.bell.length && JSON.stringify(p.bell) !== JSON.stringify(PERIODS)) {
-      errors.push(`${p.name}: bell times ${fmtBell(p.bell)} differ from PERIODS in registry.js (${fmtBell(PERIODS)}) — update PERIODS`);
+      warnings.push(`${p.name}: bell times ${fmtBell(p.bell)} differ from PERIODS in registry.js (${fmtBell(PERIODS)}) — using PERIODS`);
     }
     const dropped = [...new Set(p.rows.filter(r => owner.get(r.Class) !== i).map(r => r.Class))];
     if (dropped.length) replaced.push(`${dropped.join(', ')} from ${p.name} replaced by a later source`);
@@ -209,6 +209,9 @@ function writeOutputs(built) {
     '// [Period, Start, End] — bell schedule (24-hour) shown in the view headers',
     'const RAW_PERIOD_ROWS = [\n' + bell.map(p => '  ' + j(p)).join(',\n') + '\n];',
     '',
+    '// [Name, Start, End, After period (0 = before period 1)] — breaks shown as their own view column',
+    'const RAW_BREAK_ROWS = [\n' + BREAKS.map(b => '  ' + j(b)).join(',\n') + '\n];',
+    '',
     '// One row per class / day / period. Split periods: "Hindi / IT" ↔ "Teacher A / Teacher B"',
     '// (groups line up; "+" joins co-teachers of one group; "(H.M)" / "(E.M)" = medium). See spreadsheet_schema.md.',
     'const RAW_SCHEDULE = [\n' + schedule.map(r => '  ' + j({ Day: r.Day, Period: r.Period, Class: r.Class, Tier: r.Tier, Subject: r.Subject, Teacher: r.Teacher, Room: r.Room })).join(',\n') + '\n];',
@@ -231,8 +234,11 @@ function writeOutputs(built) {
   sourceLines.forEach((l, i) => md.push(`| Source ${i + 1} | ${l} |`));
   if (tw) md.push(`| Cross-check | ${tw.name}: ${tw.teachers.length} teachers, ${tw.claims.length} teacher / day / period entries |`);
   md.push(`| Classes | ${CLASSES.length} (${CLASSES.filter(c => c[1] === 'Middle').length} middle, ${CLASSES.filter(c => c[1] !== 'Middle').length} secondary / higher secondary) |`);
-  const lunch = [...new Set(parts.map(p => p.lunch).filter(Boolean))];
-  md.push(`| Bell schedule | ${bell.map(([n, s, e]) => `P${n} ${s}–${e}`).join(' · ')}${lunch.length ? ` · lunch ${lunch.join(', ')}` : ''} |`);
+  const slotsMd = [];
+  const breaksAfter = n => BREAKS.filter(b => b[3] === n).forEach(([name, s, e]) => slotsMd.push(`${name} ${s}–${e}`));
+  breaksAfter(0);
+  bell.forEach(([n, s, e]) => { slotsMd.push(`P${n} ${s}–${e}`); breaksAfter(n); });
+  md.push(`| Bell schedule | ${slotsMd.join(' · ')} |`);
   md.push(`| Teachers | ${TEACHERS.length} in registry, ${used.size} with periods |`);
   md.push(`| Schedule rows | ${schedule.length} |`);
   md.push(`| Split periods (class divided into groups) | ${report.splits.length} |`);

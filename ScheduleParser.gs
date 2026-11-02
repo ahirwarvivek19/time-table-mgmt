@@ -5,9 +5,13 @@
 
 const ScheduleParser = {
 
-  /** Lower-cases and collapses whitespace so "Neha  Jhala " matches "neha jhala". */
+  /** Lower-cases and collapses whitespace so "Neha  Jhala " matches "neha jhala". Zero-width
+   *  characters from copy-paste are dropped and Unicode is normalised (Hindi with a
+   *  precomposed or a combining nukta reads the same). */
   normalizeName: function(name) {
-    return String(name == null ? '' : name).replace(/\s+/g, ' ').trim().toLowerCase();
+    let s = String(name == null ? '' : name);
+    if (s.normalize) s = s.normalize('NFC');
+    return s.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
   },
 
   /** Case- and whitespace-insensitive name comparison. */
@@ -466,8 +470,10 @@ const ScheduleParser = {
       };
     }
 
-    // Different subjects double-booked -> True Clash
-    const clashDesc = slots.map(s => s.cls + ' (' + s.subject + ')').join(' / ');
+    // Different subjects double-booked -> True Clash (listed in class order, so sorting
+    // Master_Schedule does not reshuffle the text)
+    const clashDesc = slots.slice().sort((a, b) => this._classOrderKey(a.cls) < this._classOrderKey(b.cls) ? -1 : 1)
+      .map(s => s.cls + ' (' + s.subject + ')').join(' / ');
     return {
       display: clashDesc,
       isFree: false,
@@ -477,9 +483,9 @@ const ScheduleParser = {
   },
 
   /**
-   * Removes one teacher from a row. Their lane goes with them when other lanes
-   * remain ("Hindi / IT" ↔ "A / B" minus A → "IT" ↔ "B"); a co-teacher leaves the
-   * lane to the remaining teacher(s).
+   * Removes one teacher from a row. On a split period their group stays with "-" as
+   * its teacher ("Hindi / IT" ↔ "A / B" minus A → "Hindi / IT" ↔ "- / B", reported in
+   * `emptiedGroup`); a co-teacher leaves the lane to the remaining teacher(s).
    *
    * @param {string} teacherStr  Current Teacher cell
    * @param {string} subjectStr  Current Subject cell
@@ -490,15 +496,25 @@ const ScheduleParser = {
   removeTeacher: function(teacherStr, subjectStr, teacher, roomStr) {
     const parsed = this.parseLanes({ Teacher: teacherStr, Subject: subjectStr, Room: roomStr });
     const unchanged = { teacher: String(teacherStr == null ? '' : teacherStr), subject: String(subjectStr == null ? '' : subjectStr), room: String(roomStr == null ? '' : roomStr), removed: false };
+    if (parsed.mismatch) {
+      // Which group is theirs cannot be told, so nothing is removed. Say so when the
+      // teacher is in the row, so a move from Teacher_View is refused instead of
+      // silently leaving them booked twice.
+      const named = this.splitList(teacherStr).some(g => this.splitCoTeachers(g).some(t => this.sameName(t, teacher)));
+      if (named) unchanged.error = this.MISMATCH_EDIT_ERROR;
+      return unchanged;
+    }
     const idx = parsed.lanes.findIndex(l => l.teachers.some(t => this.sameName(t, teacher)));
-    if (idx === -1 || parsed.mismatch) return unchanged;
+    if (idx === -1) return unchanged;
 
     const lane = parsed.lanes[idx];
     lane.teachers = lane.teachers.filter(t => !this.sameName(t, teacher));
-    if (lane.teachers.length === 0 && parsed.lanes.length > 1) parsed.lanes.splice(idx, 1);
+    // On a split period the group stays, with "-" for its teacher: the students still have
+    // that subject, it just needs a new teacher (removing the group lost the subject)
+    const emptiedGroup = lane.teachers.length === 0 && parsed.lanes.length > 1 ? String(lane.subject || '') : '';
     const out = this.formatLanes(parsed.lanes);
     if (parsed.lanes.length === 1 && !parsed.lanes[0].teachers.length) out.subject = String(parsed.lanes[0].subject || '');
-    return { teacher: out.teacher, subject: out.subject, room: this._keepRoom(roomStr, out.room, parsed), removed: true };
+    return { teacher: out.teacher, subject: out.subject, room: this._keepRoom(roomStr, out.room, parsed), removed: true, emptiedGroup: emptiedGroup };
   },
 
   /**
@@ -536,18 +552,19 @@ const ScheduleParser = {
       lane.teachers.filter(t => !this.sameName(t, teacher)).forEach(t => replaced.push({ teacher: t, subject: lane.subject }));
       lane.teachers = [teacher];
     };
-    if (parsed.mismatch) return unchanged();
+    if (parsed.mismatch) return unchanged(this.MISMATCH_EDIT_ERROR);
     if (this.splitList(subject).length > 1) {
       return unchanged('type one subject here — a period is split into groups in Class_View');
     }
 
     const idx = lanes.findIndex(l => l.teachers.some(t => this.sameName(t, teacher)));
-    const target = subject ? lanes.findIndex(l => this.sameName(l.subject, subject)) : -1;
+    const target = subject ? this._findSubjectLane(lanes, subject) : -1;
     const groups = () => lanes.map(l => l.subject || '?').join(' / ');
 
     if (idx !== -1) {
       const lane = lanes[idx];
-      if (!subject || this.sameName(lane.subject, subject)) return unchanged();
+      // "Hindi" typed for a group shown as "Hindi (E.M)" is the same lecture: keep the mark
+      if (!subject || this.sameSubject(lane.subject, subject)) return unchanged();
       if (target === -1) {
         if (lane.teachers.length === 1) { lane.subject = subject; return done(); }
         // A co-teacher leaving to start a group of their own
@@ -565,7 +582,7 @@ const ScheduleParser = {
       const lane = lanes[0] || { subject: '', teachers: [], room: '' };
       if (!lanes.length) lanes.push(lane);
       take(lane);
-      if (subject) lane.subject = subject;
+      if (subject && !this.sameSubject(lane.subject, subject)) lane.subject = subject;
       return done();
     }
     if (!subject) {
@@ -576,6 +593,28 @@ const ScheduleParser = {
     }
     take(lanes[target]);
     return done();
+  },
+
+  /** Shown when an edit touches a row whose subjects and teacher groups don't line up. */
+  MISMATCH_EDIT_ERROR: 'its subjects and teacher groups don\'t line up — fix that row in Class_View or Master_Schedule first',
+
+  /**
+   * True when a typed subject names the same lecture as a stored one. A subject typed
+   * without a medium mark matches the marked one ("Hindi" ~ "Hindi (E.M)"), because the
+   * teacher views show one section's subject for a combined lecture.
+   */
+  sameSubject: function(stored, typed) {
+    if (this.sameName(stored, typed)) return true;
+    const a = this.splitMedium(stored), b = this.splitMedium(typed);
+    return !!b.base && this.sameName(a.base, b.base) && (!a.medium || !b.medium);
+  },
+
+  /** Index of the group a typed subject refers to: an exact match first, else a single medium-mark match. */
+  _findSubjectLane: function(lanes, subject) {
+    const exact = lanes.findIndex(l => this.sameName(l.subject, subject));
+    if (exact !== -1) return exact;
+    const loose = lanes.map((l, i) => this.sameSubject(l.subject, subject) ? i : -1).filter(i => i !== -1);
+    return loose.length === 1 ? loose[0] : -1;
   },
 
   /** Keeps the user's original Room text when the edit did not change the lanes' rooms. */

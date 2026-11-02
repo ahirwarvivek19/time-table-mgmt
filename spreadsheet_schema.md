@@ -41,10 +41,10 @@ Column A `Subject Name` feeds the subject dropdowns. Multi-subject cells (`Hindi
 | Tab | Editable | Layout |
 |---|---|---|
 | `Class_View` | Yes | B3 = class selector; row 5 = period headers; rows 6–17 = subject/teacher row pair per day. |
+| (all views) | — | Columns after the label column: Prayer (B), Period 1–4 (C–F), Lunch (G), Period 5–8 (H–K) — `viewSlots_()` in Config.gs. Prayer / Lunch are one merged grey cell; typing there saves nothing. |
 | `Teacher_View` | Yes | B3 = teacher selector; rows 6–11 = Mon–Sat; cell = `Class` + newline + `Subject`. |
 | `Teacher_Day_View` | Yes | B3 = day, E3 = class filter; one row per teacher. |
 | `Master_Grid_View` | No | One row per class; each cell lists entries with the days they run (`[Mon,Tue]`). |
-| `Teacher_Availability_Grid` | No | Generated on demand for one day. |
 | `Cover_Manager` | Append-only | Date, Absent Teacher, Period, Class to Cover, Suggested Available Teachers, Assigned Cover Teacher. |
 | `Change_Log` | Append-only, written by the script | Time, Edited By, Edited In, Day, Period, Class, Before, After. One row per changed period. Warning-only protection. |
 | `_Prefill_Data_Backup` | Hidden | Snapshot from **💾 Save Snapshot** (A:C classes, E:I teachers, K subjects, M:T schedule). |

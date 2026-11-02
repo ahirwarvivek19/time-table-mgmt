@@ -81,7 +81,8 @@ test('class sheets: every cell reads cleanly, 6 days per class, bell times and l
     assert.deepEqual(r.issues, [], sheet);
     assert.equal(new Set(r.rows.map(x => x.Class)).size, n);
     assert.equal(r.rows.length, n * 48);
-    assert.deepEqual(r.bell, PERIODS);
+    // Timetable.xlsx still prints the old bell times; registry PERIODS is what the views use
+    assert.equal(r.bell.length, PERIODS.length);
     assert.equal(r.lunch, '12:20–12:50');
     const registered = new Set(TEACHERS.map(t => t[0]));
     r.rows.forEach(row => row.Teacher.split(/\s*[/+]\s*/).filter(t => t && t !== '-').forEach(t => assert.ok(registered.has(t), `${row.Source}: ${t}`)));
@@ -157,9 +158,10 @@ test('2026-27 build: teachers filled from the teacher-wise sheet, defaults and t
   assert.equal(b.tw.classTeachers.get('9th A')[0], 'Neha Jamidar');
 });
 
-test('a changed bell time, an unknown class or an unknown word stops the build and says where', () => {
+test('a different Excel bell time is a warning (PERIODS wins); an unknown class or word stops the build and says where', () => {
   const bell = buildAll({ sources: editedCopy({ '9-12!D4': '09:40-10:20' }) });
-  assert.match(bell.errors.join('\n'), /sheet 9-12\): bell times P1 09:40–10:20.*differ from PERIODS in registry\.js/);
+  assert.match(bell.warnings.join('\n'), /sheet 9-12\): bell times P1 09:40–10:20.*differ from PERIODS in registry\.js .*using PERIODS/);
+  assert.ok(!bell.errors.some(e => /differ from PERIODS/.test(e)));
   const cls = buildAll({ sources: editedCopy({ '6-8!B5': 'कक्षा 6 F' }) });
   assert.match(cls.errors.join('\n'), /B5: class "कक्षा 6 F" → "6th F" is not in CLASSES/);
   assert.match(cls.errors.join('\n'), /6th A: no source gives a timetable/);

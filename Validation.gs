@@ -46,12 +46,15 @@ function validateSchedule_() {
   const teachersData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.TEACHERS);
   const registered = {};
   const unavailable = {};
+  const unreadableDays = []; // Teachers → Days Unavailable text that is not a school day
   const maxHours = {};
   teachersData.forEach(t => {
     const key = norm(t['Teacher Name']);
     if (!key) return;
     registered[key] = String(t['Teacher Name']).trim();
-    unavailable[key] = String(t['Days Unavailable'] || '').split(/[,\/;]/).map(normalizeDay_).filter(Boolean);
+    const parsedDays = parseDaysList_(t['Days Unavailable']);
+    unavailable[key] = parsedDays.days;
+    if (parsedDays.unreadable.length) unreadableDays.push(registered[key] + ': "' + parsedDays.unreadable.join('", "') + '"');
     const max = Number(t['Max Hours / Week']);
     if (max > 0) maxHours[key] = max;
   });
@@ -74,10 +77,14 @@ function validateSchedule_() {
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     const day = normalizeDay_(row[C.DAY - 1]) || String(row[C.DAY - 1]).trim();
-    const period = String(row[C.PERIOD - 1]).trim();
+    // "03" / "3.0" typed as text are period 3, as the views read them
+    const rawPeriod = String(row[C.PERIOD - 1]).trim();
+    const period = rawPeriod && !isNaN(Number(rawPeriod)) ? String(Number(rawPeriod)) : rawPeriod;
     const cls = String(row[C.CLASS - 1]).trim();
     if (!day && !period && !cls) continue;
-    if (cls && day && period) {
+    // A freed period keeps its row with Subject and Teacher blank; it is not a second lesson
+    const freed = !String(row[C.SUBJECT - 1]).trim() && !String(row[C.TEACHER - 1]).trim();
+    if (cls && day && period && !freed) {
       ScheduleParser.splitClasses(cls).forEach(c => {
         const k = day + '|' + period + '|' + norm(c);
         (classSlots[k] = classSlots[k] || []).push(i);
@@ -156,7 +163,12 @@ function validateSchedule_() {
     .filter(k => maxHours[k] && load[k] > maxHours[k])
     .map(k => (registered[k] || k) + ' (' + load[k] + '/' + maxHours[k] + ')');
 
-  // Write Clash Status and highlight flagged rows
+  // Write Clash Status and highlight flagged rows — only into a column that is really
+  // "Clash Status" (or still blank), never over a column the owner inserted there
+  if (!isClashStatusColumn_(sheet)) {
+    return { rowsFlagged: 0, counts: counts, overloaded: overloaded, splitSlots: splitSlots, combinedLectures: combinedLectures,
+      clashColumnMissing: true };
+  }
   const n = values.length - 1;
   const statuses = [];
   const backgrounds = [];
@@ -167,17 +179,33 @@ function validateSchedule_() {
     statuses.push([msg]);
     backgrounds.push([msg ? CLASH_CELL_COLOR : tableRowColor_(i + 1)]);
   }
-  sheet.getRange(2, C.CLASH, n, 1).setValues(statuses);
+  // Writing 1,344 unchanged statuses after every edit is most of this function's cost
+  const same = statuses.every((s, k) => String(values[k + 1][C.CLASH - 1] == null ? '' : values[k + 1][C.CLASH - 1]) === s[0]);
+  if (!same) sheet.getRange(2, C.CLASH, n, 1).setValues(statuses);
   sheet.getRange(2, C.CLASH, n, 1).setBackgrounds(backgrounds);
 
-  return { rowsFlagged: rowsFlagged, counts: counts, overloaded: overloaded, splitSlots: splitSlots, combinedLectures: combinedLectures };
+  return { rowsFlagged: rowsFlagged, counts: counts, overloaded: overloaded, splitSlots: splitSlots, combinedLectures: combinedLectures,
+    unreadableDays: unreadableDays };
+}
+
+/** True when Master_Schedule's Clash Status column (H) is headed "Clash Status" or is still blank. */
+function isClashStatusColumn_(sheet) {
+  const h = String(sheet.getRange(1, CONFIG.COL.CLASH).getValue() || '').trim().toLowerCase();
+  return h === '' || h === CONFIG.SCHEDULE_HEADERS[CONFIG.COL.CLASH - 1].toLowerCase();
 }
 
 function formatValidationSummary_(result) {
+  if (result.clashColumnMissing) {
+    return '⚠️ Conflicts were checked but not written: Master_Schedule column H is not "Clash Status". ' +
+      'Move your own column to the right of "Clash Status" (or rename H back), then run ✅ Check For Conflicts again.';
+  }
   const info = 'Allowed, not conflicts: ' + (result.combinedLectures || 0) + ' combined lecture(s) (one teacher, several sections), ' +
     (result.splitSlots || 0) + ' split period(s) (a class split into groups).';
+  const unreadable = (result.unreadableDays || []).length
+    ? '\n\nTeachers → Days Unavailable could not be read, so no day off was used for these (write whole days like "Monday, Friday" or "Mon-Wed"):\n• ' + result.unreadableDays.slice(0, 10).join('\n• ')
+    : '';
   if (result.rowsFlagged === 0 && result.overloaded.length === 0) {
-    return '✅ Validation complete — no conflicts found.\n\n' + info;
+    return '✅ Validation complete — no conflicts found.\n\n' + info + unreadable;
   }
   const lines = ['Validation complete — ' + result.rowsFlagged + ' row(s) flagged in the Clash Status column.', '', info, ''];
   Object.keys(result.counts).forEach(k => lines.push('• ' + k + ': ' + result.counts[k]));
@@ -186,5 +214,5 @@ function formatValidationSummary_(result) {
     result.overloaded.slice(0, 15).forEach(t => lines.push('• ' + t));
     if (result.overloaded.length > 15) lines.push('• … and ' + (result.overloaded.length - 15) + ' more');
   }
-  return lines.join('\n');
+  return lines.join('\n') + unreadable;
 }

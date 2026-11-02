@@ -32,7 +32,8 @@ const TeacherDayViewManager = {
     sheet.setHiddenGridlines(true);
 
     const periods = CONFIG.PERIODS;
-    const numCols = periods.length + 1; // Teacher col + periods
+    const viewCols = viewSlots_(); // periods plus the Prayer / Lunch columns
+    const numCols = viewCols.length + 1; // Teacher col + slot cols
     const startRow = 5;
 
     // ── 1. FETCH CLASSES & TEACHERS DATA ──────────────────────────────────
@@ -40,6 +41,7 @@ const TeacherDayViewManager = {
     const filterOptions = [CONFIG.ALL_CLASSES, ...classNames];
 
     const teacherNames = getTeacherNames_();
+    const daysOff = teacherDaysOff_();
 
     // ── 2. TITLE BANNER (Rows 1–2) ────────────────────────────────────────
     sheet.getRange(1, 1, 2, numCols)
@@ -138,18 +140,32 @@ const TeacherDayViewManager = {
     });
 
     // ── 5. BUILD GRID OUTPUT ──────────────────────────────────────────────
-    const headers = ['Teacher / Period'].concat(periods.map(periodHeader_));
+    const headers = ['Teacher / Period'].concat(viewCols.map(viewSlotHeader_));
     const gridOutput = [headers];
     const metadataGrid = []; // Stores { isFree, isCombined, isClash } per cell
 
     teacherNames.forEach(teacher => {
       const row = [teacher];
       const metaRow = [{ isFree: false, isCombined: false, isClash: false }];
+      const isOff = (daysOff[ScheduleParser.normalizeName(teacher)] || []).indexOf(selectedDay) !== -1;
 
-      periods.forEach(period => {
-        const slots = lookup[ScheduleParser.normalizeName(teacher)][period];
+      viewCols.forEach(col => {
+        if (!col.period) {
+          row.push(col.name.toUpperCase());
+          metaRow.push({ isBreak: true });
+          return;
+        }
+        const slots = lookup[ScheduleParser.normalizeName(teacher)][col.period];
         const grouped = ScheduleParser.groupTeacherSlots(slots);
+        // Teachers → Days Unavailable: a free period reads DAY OFF; a lesson booked on a
+        // day off keeps its text and is coloured as a warning (Check For Conflicts flags it)
+        if (isOff && grouped.isFree) {
+          row.push(CONFIG.DAY_OFF);
+          metaRow.push({ isDayOff: true });
+          return;
+        }
         row.push(grouped.display);
+        grouped.onDayOff = isOff;
         metaRow.push(grouped);
       });
 
@@ -182,9 +198,9 @@ const TeacherDayViewManager = {
     const fontColors = [];
     const fontWeights = [];
 
+    // One call for every teacher row (it was one call per teacher, ~80 per edit)
+    if (numRows > 1) sheet.setRowHeights(startRow + 1, numRows - 1, 38);
     for (let r = 1; r < numRows; r++) {
-      const sheetRow = startRow + r;
-      sheet.setRowHeight(sheetRow, 38);
 
       const rowBg = [];
       const rowFont = [];
@@ -195,10 +211,18 @@ const TeacherDayViewManager = {
       rowFont.push('#ECF0F1');
       rowWeight.push('bold');
 
-      // Periods 1-8 (Cols 2-9)
+      // Period and break columns (Cols 2+)
       for (let c = 1; c < numCols; c++) {
         const meta = metadataGrid[r - 1][c];
-        if (meta.isFree) {
+        if (meta.isBreak) {
+          rowBg.push('#EAECEE');    // grey: Prayer / Lunch (restyled by styleBreakColumns_)
+          rowFont.push('#566573');
+          rowWeight.push('bold');
+        } else if (meta.isDayOff || meta.onDayOff) {
+          rowBg.push('#FEF5E7');    // amber: teacher is off today (Teachers → Days Unavailable)
+          rowFont.push('#B9770E');
+          rowWeight.push('bold');
+        } else if (meta.isFree) {
           rowBg.push('#EAFAF1');    // soft green for FREE
           rowFont.push('#1E8449');
           rowWeight.push('bold');
@@ -231,9 +255,8 @@ const TeacherDayViewManager = {
 
     // Column widths
     sheet.setColumnWidth(1, 190);
-    for (let i = 2; i <= numCols; i++) {
-      sheet.setColumnWidth(i, 155);
-    }
+    sheet.setColumnWidths(2, numCols - 1, 155);
+    styleBreakColumns_(sheet, startRow, numRows);
 
     sheet.setFrozenRows(startRow);
     sheet.setFrozenColumns(1);

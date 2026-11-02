@@ -18,16 +18,34 @@
   function paint(td, bg) { if (COLOUR.test(bg || '')) td.style.backgroundColor = bg; }
   function short(day) { return day.slice(0, 3); }
 
+  // Column order of every table: periods ({period: index into data.periods}) and breaks
+  var COLUMNS = data.columns || data.periods.map(function (p, i) { return { period: i }; });
+
   function headRow(first) {
     var thead = el('thead'), tr = el('tr');
     tr.appendChild(el('th', first, null, { scope: 'col' }));
-    data.periods.forEach(function (p) {
-      var th = el('th', p.label, null, { scope: 'col' });
+    COLUMNS.forEach(function (col) {
+      var p = col.period === undefined ? col : data.periods[col.period];
+      var th = el('th', p.label, col.period === undefined ? 'brk' : null, { scope: 'col' });
       if (p.time) th.appendChild(el('small', p.time));
       tr.appendChild(th);
     });
     thead.appendChild(tr);
     return thead;
+  }
+
+  /**
+   * Adds one table row's cells in column order: render(cell, periodIndex) for each period,
+   * and on the first row one Prayer / Lunch cell that spans every row.
+   */
+  function addCells(tr, rowIndex, rowCount, cells, render) {
+    COLUMNS.forEach(function (col) {
+      if (col.period === undefined) {
+        if (rowIndex === 0) tr.appendChild(el('td', col.label.toUpperCase(), 'brk', { rowspan: String(rowCount) }));
+        return;
+      }
+      render(cells[col.period], col.period);
+    });
   }
 
   function caption(table, title, detail) {
@@ -74,7 +92,7 @@
     c.days.forEach(function (cells, i) {
       var tr = el('tr');
       tr.appendChild(el('th', data.days[i], null, { scope: 'row' }));
-      cells.forEach(function (cell, p) {
+      addCells(tr, i, c.days.length, cells, function (cell, p) {
         var subject = cell[0], teacher = cell[1], bg = cell[2], note = cell[3];
         var td = el('td');
         if (!subject && !teacher) { td.textContent = 'Free'; td.className = 'free'; }
@@ -129,7 +147,7 @@
     t.cells.forEach(function (row, i) {
       var tr = el('tr');
       tr.appendChild(el('th', data.days[i], null, { scope: 'row' }));
-      row.forEach(function (cell) { var td = el('td'); teacherCell(td, cell, false); tr.appendChild(td); });
+      addCells(tr, i, t.cells.length, row, function (cell) { var td = el('td'); teacherCell(td, cell, false); tr.appendChild(td); });
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -148,10 +166,10 @@
     caption(table, day, rows.length + ' teachers');
     table.appendChild(headRow('Teacher'));
     var tbody = el('tbody');
-    rows.forEach(function (r) {
+    rows.forEach(function (r, i) {
       var tr = el('tr');
       tr.appendChild(el('th', r.teacher, null, { scope: 'row' }));
-      r.cells.forEach(function (cell) { var td = el('td'); teacherCell(td, cell, true); tr.appendChild(td); });
+      addCells(tr, i, rows.length, r.cells, function (cell) { var td = el('td'); teacherCell(td, cell, true); tr.appendChild(td); });
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -164,10 +182,10 @@
     caption(table, 'All classes', 'entries that do not run every day show their days in [ ]');
     table.appendChild(headRow('Class'));
     var tbody = el('tbody');
-    data.grid.forEach(function (row) {
+    data.grid.forEach(function (row, i) {
       var tr = el('tr');
       tr.appendChild(el('th', row[0], null, { scope: 'row' }));
-      row.slice(1).forEach(function (v) { tr.appendChild(el('td', v)); });
+      addCells(tr, i, data.grid.length, row.slice(1), function (v) { tr.appendChild(el('td', v)); });
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);

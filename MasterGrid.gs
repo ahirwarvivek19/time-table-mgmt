@@ -19,6 +19,7 @@ function generateMasterGrid(silent) {
   let gridSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_GRID);
   if (!gridSheet) gridSheet = ss.insertSheet(CONFIG.SHEETS.MASTER_GRID);
   gridSheet.clear();
+  gridSheet.getDataRange().breakApart(); // the merged Prayer / Lunch cells of the last draw
 
   const result = _buildMasterGridOutput_();
   if (!result) {
@@ -55,18 +56,15 @@ function refreshMasterGridData_() {
   const numRows = gridOutput.length;
   const numCols = gridOutput[0].length;
 
-  // Clear only data area and rewrite — preserves all formatting
-  const existingRows = gridSheet.getLastRow();
-  if (existingRows > numRows) {
-    gridSheet.getRange(numRows + 1, 1, existingRows - numRows, numCols).clearContent();
+  // A grid with another shape (a class added or removed, or drawn before the Prayer / Lunch
+  // columns) is redrawn in full, so its styling and the merged break cells match
+  if (gridSheet.getLastColumn() !== numCols || gridSheet.getLastRow() !== numRows) {
+    generateMasterGrid(true);
+    return;
   }
+
+  // Same shape: rewrite the values only — preserves all formatting
   gridSheet.getRange(1, 1, numRows, numCols).setValues(gridOutput);
-  // Rows added since the last full restyle (e.g. new classes) get the basic body style
-  if (numRows > existingRows && existingRows > 0) {
-    gridSheet.getRange(existingRows + 1, 1, numRows - existingRows, numCols)
-             .setFontFamily(CONFIG.FONT).setWrap(true)
-             .setVerticalAlignment('middle').setHorizontalAlignment('center');
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,13 +75,15 @@ function _buildMasterGridOutput_() {
   const scheduleData = DataAccess.getSheetDataAsObjects(CONFIG.SHEETS.SCHEDULE);
   if (scheduleData.length === 0) return null;
 
-  // Classes sheet order first (6th … 12th), then any class only found in the schedule
+  // Classes sheet order first (6th … 12th), then any class only found in the schedule.
+  // "6th A, 6th B" rows count for each class they name.
   const known = getClassNames_();
-  const extra = [...new Set(scheduleData.map(r => String(r.Class || '').trim()).filter(Boolean))]
-    .filter(c => known.indexOf(c) === -1);
+  const named = [].concat.apply([], scheduleData.map(r => ScheduleParser.splitClasses(r.Class)))
+    .map(c => String(c).trim()).filter(Boolean);
   const inSchedule = {};
-  scheduleData.forEach(r => { inSchedule[String(r.Class || '').trim()] = true; });
-  const classes = known.filter(c => inSchedule[c]).concat(extra);
+  named.forEach(c => { inSchedule[ScheduleParser.normalizeName(c)] = true; });
+  const extra = [...new Set(named)].filter(c => !known.some(k => ScheduleParser.sameName(k, c)));
+  const classes = known.filter(c => inSchedule[ScheduleParser.normalizeName(c)]).concat(extra);
   const periods = CONFIG.PERIODS;
   const numDays = CONFIG.DAYS.length;
 
@@ -97,23 +97,27 @@ function _buildMasterGridOutput_() {
   scheduleData.forEach(row => {
     if (row.Class && row.Period && row.Day) {
       const p = parseInt(row.Period);
-      const cls = String(row.Class).trim();
-      if (lookup[cls] && lookup[cls][p] && (row.Subject || row.Teacher)) {
-        let entry = row.Subject || '';
-        if (row.Teacher) entry += ' (' + row.Teacher + ')';
-        lookup[cls][p].push({ day: normalizeDay_(row.Day) || String(row.Day), entry: entry });
-      }
+      if (!(row.Subject || row.Teacher)) return;
+      let entry = row.Subject || '';
+      if (row.Teacher) entry += ' (' + row.Teacher + ')';
+      // A row for "6th A, 6th B" belongs under both classes
+      ScheduleParser.splitClasses(row.Class).forEach(raw => {
+        const cls = classes.find(c => ScheduleParser.sameName(c, raw)) || String(raw).trim();
+        if (lookup[cls] && lookup[cls][p]) lookup[cls][p].push({ day: normalizeDay_(row.Day) || String(row.Day), entry: entry });
+      });
     }
   });
 
   // Build output array
-  const headers = ['Class'].concat(periods.map(periodHeader_));
+  const viewCols = viewSlots_(); // periods plus the Prayer / Lunch columns
+  const headers = ['Class'].concat(viewCols.map(viewSlotHeader_));
   const gridOutput = [headers];
 
   classes.forEach(c => {
     const rowOutput = [c];
-    periods.forEach(p => {
-      const entries = lookup[c][p];
+    viewCols.forEach(col => {
+      if (!col.period) { rowOutput.push(col.name.toUpperCase()); return; }
+      const entries = lookup[c][col.period];
       if (entries.length === 0) {
         rowOutput.push('—');
       } else {
@@ -127,7 +131,8 @@ function _buildMasterGridOutput_() {
         for (const [entryText, daysArr] of Object.entries(grouped)) {
           // Only an entry that runs every school day is shown without its day list
           // (">= 5" used to hide the one day an entry did NOT run)
-          cellLines.push(daysArr.length >= numDays ? entryText
+          // Count distinct days: a duplicate Monday row must not make a 5-day entry look daily
+          cellLines.push(new Set(daysArr).size >= numDays ? entryText
                                                    : entryText + ' [' + daysArr.join(',') + ']');
         }
         rowOutput.push(cellLines.join('\n'));
@@ -187,4 +192,5 @@ function _applyMasterGridStyling_(gridSheet, numRows, numCols, numClasses) {
   gridSheet.setColumnWidth(1, 140);
   for (let i = 2; i <= numCols; i++) gridSheet.setColumnWidth(i, 210);
   gridSheet.setRowHeights(2, numRows - 1, 85);
+  styleBreakColumns_(gridSheet, 1, numRows);
 }

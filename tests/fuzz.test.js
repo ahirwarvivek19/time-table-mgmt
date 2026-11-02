@@ -31,7 +31,7 @@ function builtIn() {
   const env = createEnvironment();
   const { api } = loadProject(ROOT, env);
   api.setupInitialSpreadsheet();
-  env.answers.push('NO');
+  env.answers.push('YES'); // no snapshot: confirm replacing the (empty) sheet
   api.importExcelData();
   return { env, api };
 }
@@ -80,7 +80,7 @@ test('Random edits through every view keep ' + label + ' consistent (' + count +
     () => {
       const cls = pick(classes), d = Math.floor(rand() * 6), p = 1 + Math.floor(rand() * 8);
       api.ClassViewManager.renderClassView(cls);
-      const r = ss.getSheetByName('Class_View').getRange(7 + d * 2, 1 + p);
+      const r = ss.getSheetByName('Class_View').getRange(7 + d * 2, api.viewColumnOfPeriod_(p));
       r.setValue(pick(teachers));
       api.onEdit(editEvent(env, r, { triggerUid: uid }));
     },
@@ -91,7 +91,7 @@ test('Random edits through every view keep ' + label + ' consistent (' + count +
       const n = 1 + Math.floor(rand() * 3), m = rand() < 0.2 ? n + 1 : n;
       const subj = Array.from({ length: n }, () => pick(['Hindi', 'IT', 'Art', 'Maths', 'Science'])).join(' / ');
       const tch = Array.from({ length: m }, () => pick(teachers)).join(' / ');
-      const r = ss.getSheetByName('Class_View').getRange(6 + d * 2, 1 + p, 2, 1);
+      const r = ss.getSheetByName('Class_View').getRange(6 + d * 2, api.viewColumnOfPeriod_(p), 2, 1);
       r.setValues([[subj], [tch]]);
       api.onEdit(editEvent(env, r, { triggerUid: uid }));
     },
@@ -99,7 +99,7 @@ test('Random edits through every view keep ' + label + ' consistent (' + count +
     () => {
       const t = pick(teachers), d = Math.floor(rand() * 6), p = 1 + Math.floor(rand() * 8);
       api.TeacherViewManager.renderTeacherView(t);
-      const r = ss.getSheetByName('Teacher_View').getRange(6 + d, 1 + p);
+      const r = ss.getSheetByName('Teacher_View').getRange(6 + d, api.viewColumnOfPeriod_(p));
       r.setValue(rand() < 0.3 ? 'FREE' : pick(classes) + (rand() < 0.5 ? ' - ' + pick(['Maths', 'Hindi', 'IT']) : ''));
       api.onEdit(editEvent(env, r, { triggerUid: uid }));
     },
@@ -117,7 +117,7 @@ test('Random edits through every view keep ' + label + ' consistent (' + count +
       api.ClassViewManager.renderClassView(cls);
       const cv = ss.getSheetByName('Class_View');
       const kind = Math.floor(rand() * 3);
-      const r = kind === 1 ? cv.getRange(7 + d * 2, 1 + p) : cv.getRange(6 + d * 2, 1 + p);
+      const r = kind === 1 ? cv.getRange(7 + d * 2, api.viewColumnOfPeriod_(p)) : cv.getRange(6 + d * 2, api.viewColumnOfPeriod_(p));
       r.setValue(kind === 0 ? pick(teachers) : kind === 1 ? 'Nobody ' + Math.floor(rand() * 99) : '');
       api.onEdit(editEvent(env, r, { triggerUid: uid }));
     },

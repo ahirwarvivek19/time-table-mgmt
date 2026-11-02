@@ -59,7 +59,6 @@ test('Upgrade without importing: Setup / Repair, Refresh, Check For Conflicts an
   api.getClassNames_().forEach(c => api.ClassViewManager.renderClassView(c));
   api.getTeacherNames_().forEach(t => api.TeacherViewManager.renderTeacherView(t));
   api.TeacherDayViewManager.renderTeacherDayView('Friday', 'All Classes');
-  api.renderTeacherAvailabilityGrid_('Monday');
   api.generateMasterGrid(true);
   api.apiGetTeachers();
   assertDataUnchanged(ss, 'opening views');
@@ -72,25 +71,25 @@ test('Upgrade: hand-edited and legacy rows still show correctly in the views', (
   api.setupInitialSpreadsheet();
   // legacy: one teacher for two subjects
   api.TeacherViewManager.renderTeacherView('Indira Mathur');
-  assert.match(String(ss.getSheetByName('Teacher_View').getRange(10, 9).getValue()), /6th B/);
+  assert.match(String(ss.getSheetByName('Teacher_View').getRange(10, 11).getValue()), /6th B/);
   // a hand-added second row for a period that already had one: both show (merged),
   // keeping subject ↔ teacher order, and Check For Conflicts points at the duplicate
   api.ClassViewManager.renderClassView('6th A');
   const cv = ss.getSheetByName('Class_View');
-  assert.equal(cv.getRange(14, 9).getValue(), 'Sanskrit / Hindi / IT / Art');
-  assert.match(String(cv.getRange(15, 9).getValue()), / \/ Ekta Gour \/ - \/ Manjula Marmat$/);
+  assert.equal(cv.getRange(14, 11).getValue(), 'Sanskrit / Hindi / IT / Art');
+  assert.match(String(cv.getRange(15, 11).getValue()), / \/ Ekta Gour \/ - \/ Manjula Marmat$/);
   api.validateSchedule_();
   const dup = read(ss, 'Master_Schedule').filter(r => r[2] === '6th A' && r[0] === 'Friday' && r[1] === 8);
   assert.equal(dup.length, 2);
   dup.forEach(r => assert.match(String(r[7]), /Duplicate Period/));
   // combined row shows in both classes (next to what 11th B already had); lowercase day still shows on Monday
   api.ClassViewManager.renderClassView('11th B');
-  assert.match(String(cv.getRange(16, 9).getValue()), /(^| \/ )Yoga$/);
+  assert.match(String(cv.getRange(16, 11).getValue()), /(^| \/ )Yoga$/);
   api.ClassViewManager.renderClassView('11th A');
-  assert.match(String(cv.getRange(16, 9).getValue()), /(^| \/ )Yoga$/);
+  assert.match(String(cv.getRange(16, 11).getValue()), /(^| \/ )Yoga$/);
   const lower = LEGACY.Master_Schedule[3];
   api.ClassViewManager.renderClassView(lower[2]);
-  assert.equal(cv.getRange(6, 1 + Number(lower[1])).getValue(), lower[4], 'the "monday" row shows on Monday');
+  assert.equal(cv.getRange(6, api.viewColumnOfPeriod_(Number(lower[1]))).getValue(), lower[4], 'the "monday" row shows on Monday');
   // the added teacher is in the dropdowns
   assert.ok(api.getTeacherNamesSorted_().indexOf('New Teacher Added') !== -1);
 });
@@ -99,7 +98,7 @@ test('Upgrade: one edit in a view changes only that period — every other row s
   const { env, api, ss } = legacySheet();
   api.setupInitialSpreadsheet();
   api.ClassViewManager.renderClassView('6th A');
-  const range = ss.getSheetByName('Class_View').getRange(13, 9); // Thursday P8 teacher row
+  const range = ss.getSheetByName('Class_View').getRange(13, 11); // Thursday P8 teacher row
   const before = read(ss, 'Master_Schedule');
   range.setValue(range.getValue() || 'Ruchika Vyas');
   api.onEdit(editEvent(env, range, { triggerUid: env.properties.EDIT_TRIGGER_UID }));

@@ -63,12 +63,20 @@ const CLASSES = [
   ['12th A', 'Higher Secondary', '301'], ['12th B', 'Higher Secondary', ''], ['12th C', 'Higher Secondary', ''], ['12th D', 'Higher Secondary', '206'],
 ];
 
-// Bell schedule — the same for every class. The converter checks it against the
-// header rows of the Excel sheets and stops if they differ, so update it here when
-// the school changes its timings. Lunch 12:20–12:50 sits between periods 4 and 5.
+// Bell schedule — the same for every class, and the times every view shows. Update it
+// here when the school changes its timings; the Excel header times are only compared
+// (a difference is a warning). Prayer 09:10–10:00 is before period 1; lunch 12:50–13:20
+// sits between periods 4 and 5.
 const PERIODS = [
-  [1, '09:30', '10:20'], [2, '10:20', '11:00'], [3, '11:00', '11:40'], [4, '11:40', '12:20'],
-  [5, '12:50', '13:30'], [6, '13:30', '14:10'], [7, '14:10', '14:50'], [8, '14:50', '15:30'],
+  [1, '10:00', '10:50'], [2, '10:50', '11:30'], [3, '11:30', '12:10'], [4, '12:10', '12:50'],
+  [5, '13:20', '14:00'], [6, '14:00', '14:40'], [7, '14:40', '15:20'], [8, '15:20', '16:00'],
 ];
 
-module.exports = { DAYS, DAY_KEYS, TEACHERS, NEW_TEACHERS, CLASSES, PERIODS };
+// Breaks shown as their own column in every view: [Name, Start, End, the period they follow
+// (0 = before period 1)].
+const BREAKS = [
+  ['Prayer', '09:10', '10:00', 0],
+  ['Lunch', '12:50', '13:20', 4],
+];
+
+module.exports = { DAYS, DAY_KEYS, TEACHERS, NEW_TEACHERS, CLASSES, PERIODS, BREAKS };

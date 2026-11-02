@@ -68,8 +68,10 @@ test('assignTeacher / removeTeacher on split periods: groups, co-teachers and ro
   assert.deepEqual(plain(took.replaced), [{ teacher: 'B', subject: 'IT' }]);
   // removing a co-teacher keeps the group
   assert.deepEqual(plain(pick(p.removeTeacher('A / B + C', 'Hindi / IT', 'C', '1 / 2'))), { teacher: 'A / B', subject: 'Hindi / IT', room: '1 / 2' });
-  // removing the only teacher of a group removes the group and its room
-  assert.deepEqual(plain(pick(p.removeTeacher('A / B', 'Hindi / IT', 'A', '1 / 2'))), { teacher: 'B', subject: 'IT', room: '2' });
+  // removing the only teacher of a group keeps the group (and its room) with "-" as its teacher
+  const freed = p.removeTeacher('A / B', 'Hindi / IT', 'A', '1 / 2');
+  assert.deepEqual(plain(pick(freed)), { teacher: '- / B', subject: 'Hindi / IT', room: '1 / 2' });
+  assert.equal(freed.emptiedGroup, 'Hindi');
   // a subject the split period does not have is refused (groups are set up in Class_View)
   assert.match(p.assignTeacher('A / B', 'Hindi / IT', 'C', 'Beauty', '').error, /type one of those subjects/);
   // no subject on a split period cannot be placed
@@ -160,9 +162,9 @@ test('Teacher_View shows a combined lecture once with all sections, and a cross-
   ], ['Rubal Verma', 'Indira Mathur', 'Rakesh Kumar Jaiswal']);
   api.TeacherViewManager.renderTeacherView('Indira Mathur');
   const tv = env.ss.getSheetByName('Teacher_View');
-  assert.equal(tv.getRange(6, 9).getValue(), '9th C, 9th D\nSocial Science (E)');
+  assert.equal(tv.getRange(6, 11).getValue(), '9th C, 9th D\nSocial Science (E)');
   api.TeacherViewManager.renderTeacherView('Rakesh Kumar Jaiswal');
-  assert.match(String(tv.getRange(7, 7).getValue()), /11th D\nMathematics\n---\n12th D\nMathematics/);
+  assert.match(String(tv.getRange(7, 9).getValue()), /11th D\nMathematics\n---\n12th D\nMathematics/);
 });
 
 test('Teacher_View edit on a split period: a teacher takes the group they name; unknown subject or bare class is refused', () => {
@@ -171,17 +173,17 @@ test('Teacher_View edit on a split period: a teacher takes the group they name; 
     ['Monday', 1, '9th D', 'Secondary', 'English', 'Y', '', ''],
   ], ['Rubal Verma', 'Indira Mathur', 'X', 'Y']);
   // A subject the period does not have is refused, not added as a new group
-  teacherViewEdit(env, api, 'X', 6, 2, '9th C - Beauty');
+  teacherViewEdit(env, api, 'X', 6, 3, '9th C - Beauty');
   let r = rows(ss)[0];
   assert.deepEqual([r[4], r[5]], ['Hindi / IT', 'Rubal Verma / Indira Mathur']);
   assert.ok(env.ss.toasts.some(t => /type one of those subjects/.test(t.msg)));
   // Naming an existing group replaces its teacher, and says so
-  teacherViewEdit(env, api, 'X', 6, 2, '9th C - IT');
+  teacherViewEdit(env, api, 'X', 6, 3, '9th C - IT');
   r = rows(ss)[0];
   assert.deepEqual([r[4], r[5]], ['Hindi / IT', 'Rubal Verma / X']);
   assert.ok(env.ss.toasts.some(t => t.title === 'Saved' && /Indira Mathur replaced by X/.test(t.msg)));
   // Y has 9th D; typing just "9th C" cannot pick a group, so nothing changes anywhere
-  teacherViewEdit(env, api, 'Y', 6, 2, '9th C');
+  teacherViewEdit(env, api, 'Y', 6, 3, '9th C');
   r = rows(ss);
   assert.equal(r[1][5], 'Y', 'Y was not removed from 9th D');
   assert.equal(r[0][5], 'Rubal Verma / X');
@@ -222,12 +224,12 @@ test('Class_View colours split / combined / clash cells and explains them in a n
   ], ['Rubal Verma', 'Indira Mathur', 'X', 'Y']);
   api.ClassViewManager.renderClassView('9th C');
   const cv = env.ss.getSheetByName('Class_View');
-  const cell = p => cv.getRange(6, 1 + p); // Monday subject row
+  const cell = p => cv.getRange(6, api.viewColumnOfPeriod_(p)); // Monday subject row
   assert.equal(cell(1).getBackground(), '#F5EEF8');
   assert.equal(cell(1).getNote(), 'Taught together:\n• Social Science — Rubal Verma: with 9th D');
   assert.equal(cell(2).getBackground(), '#FEF5E7');
   assert.equal(cell(2).getValue(), 'Hindi / IT');
-  assert.equal(cv.getRange(7, 3).getValue(), 'Indira Mathur / X');
+  assert.equal(cv.getRange(7, 4).getValue(), 'Indira Mathur / X');
   assert.match(cell(2).getNote(), /Split class — 2 groups:\n• Hindi — Indira Mathur\n• IT — X/);
   assert.equal(cell(3).getBackground(), '#FADBD8');
   assert.match(cell(3).getNote(), /⚠ Clash: Y also has 9th D \(Mathematics\)/);

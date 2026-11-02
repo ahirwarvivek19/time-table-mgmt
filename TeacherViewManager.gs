@@ -24,7 +24,8 @@ const TeacherViewManager = {
 
     const days    = CONFIG.DAYS;
     const periods = CONFIG.PERIODS;
-    const numCols = periods.length + 1;
+    const slots   = viewSlots_();   // periods plus the Prayer / Lunch columns
+    const numCols = slots.length + 1;
     const startRow = 5;
 
     // ── 1. TEACHER SELECTION ──────────────────────────────────────────────
@@ -94,7 +95,7 @@ const TeacherViewManager = {
     });
 
     // ── 5. BUILD GRID DATA ────────────────────────────────────────────────
-    const headers = ['Day / Period'].concat(periods.map(periodHeader_));
+    const headers = ['Day / Period'].concat(slots.map(viewSlotHeader_));
     const gridOutput = [headers];
     const bg = [];
     const fontColors = [];
@@ -103,8 +104,13 @@ const TeacherViewManager = {
     days.forEach((day, r) => {
       const row = [day];
       const rowBg = ['#2C3E50'], rowFont = ['#ECF0F1'], rowWeight = ['bold'];
-      periods.forEach(period => {
-        const slots = lookup[day][period];
+      slots.forEach(slot => {
+        if (!slot.period) {
+          row.push(slot.name.toUpperCase());
+          rowBg.push('#EAECEE'); rowFont.push('#566573'); rowWeight.push('bold');
+          return;
+        }
+        const slots = lookup[day][slot.period];
         if (slots.length === 0) {
           row.push(CONFIG.FREE);
           rowBg.push('#EAFAF1'); rowFont.push('#1E8449'); rowWeight.push('bold');
@@ -160,7 +166,8 @@ const TeacherViewManager = {
     }
 
     sheet.setColumnWidth(1, 120);
-    for (let i = 2; i <= numCols; i++) sheet.setColumnWidth(i, 160);
+    sheet.setColumnWidths(2, numCols - 1, 160);
+    styleBreakColumns_(sheet, startRow, numRows);
 
     sheet.setFrozenRows(startRow);
     sheet.setFrozenColumns(1);
@@ -210,18 +217,31 @@ function updateTeacherSlot_(teacherName, day, period, newValue, changes, notices
   const cleanValue = String(newValue == null ? '' : newValue).trim();
   // Day typed as "monday " in Master_Schedule still matches
   const inSlot = i => normalizeDay_(values[i][C.DAY - 1]) === day && values[i][C.PERIOD - 1] == period;
+  // The teacher comes from B3 (Teacher_View) or column A (Teacher_Day_View); a name typed
+  // over column A would otherwise be written into Master_Schedule as a new "teacher"
+  const registered = getTeacherNames_();
+  if (registered.length && !registered.some(t => ScheduleParser.sameName(t, teacherName))) {
+    return day + ' P' + period + ': "' + teacherName + '" is not on the Teachers tab — add or rename teachers there, then 🔄 Refresh All Views.';
+  }
 
   const removeFromRow = i => {
     const res = ScheduleParser.removeTeacher(values[i][C.TEACHER - 1], values[i][C.SUBJECT - 1], teacherName, values[i][C.ROOM - 1]);
     if (!res.removed) return;
     writeLaneCells_(msSheet, values, i, res, changes);
-    if (String(res.subject).trim() && !String(res.teacher).trim()) {
+    if (res.emptiedGroup) {
+      notices.push(day + ' P' + period + ': ' + values[i][C.CLASS - 1] + ' ' + res.emptiedGroup + ' group now has no teacher.');
+    } else if (String(res.subject).trim() && !String(res.teacher).trim()) {
       notices.push(day + ' P' + period + ': ' + values[i][C.CLASS - 1] + ' ' + res.subject + ' now has no teacher.');
     }
   };
 
   // ── FREE / empty: remove teacher from this slot ─────────────────────────
-  if (!cleanValue || cleanValue.toUpperCase() === CONFIG.FREE) {
+  if (!cleanValue || cleanValue.toUpperCase() === CONFIG.FREE || cleanValue.toUpperCase() === CONFIG.DAY_OFF) {
+    for (let i = 1; i < values.length; i++) {
+      if (!inSlot(i)) continue;
+      const trial = ScheduleParser.removeTeacher(values[i][C.TEACHER - 1], values[i][C.SUBJECT - 1], teacherName, values[i][C.ROOM - 1]);
+      if (trial.error) return day + ' P' + period + ': ' + values[i][C.CLASS - 1] + ': ' + trial.error + '.';
+    }
     for (let i = 1; i < values.length; i++) if (inSlot(i)) removeFromRow(i);
     return '';
   }
@@ -271,6 +291,12 @@ function updateTeacherSlot_(teacherName, day, period, newValue, changes, notices
     const trial = ScheduleParser.assignTeacher(values[i][C.TEACHER - 1], values[i][C.SUBJECT - 1], teacherName, targetSubject, values[i][C.ROOM - 1]);
     if (trial.error) return day + ' P' + period + ': ' + values[i][C.CLASS - 1] + ': ' + trial.error + '.';
   }
+  // ...and that the teacher can be taken out of the classes they leave
+  for (let i = 1; i < values.length; i++) {
+    if (!inSlot(i) || ScheduleParser.rowIncludesClass({ Class: values[i][C.CLASS - 1] }, targetClass)) continue;
+    const trial = ScheduleParser.removeTeacher(values[i][C.TEACHER - 1], values[i][C.SUBJECT - 1], teacherName, values[i][C.ROOM - 1]);
+    if (trial.error) return day + ' P' + period + ': ' + values[i][C.CLASS - 1] + ': ' + trial.error + '.';
+  }
 
   // Remove the teacher from every other class at this slot (a move, not a copy)
   for (let i = 1; i < values.length; i++) {
@@ -298,7 +324,19 @@ function updateTeacherSlot_(teacherName, day, period, newValue, changes, notices
     }
     if (targetSubject) addMissingSubjects_([targetSubject]);
   });
+  if (!errors.length) dayOffNotices_(day, period, [teacherName]).forEach(n => notices.push(n));
   return errors.length ? day + ' P' + period + ': ' + errors.join('; ') : '';
+}
+
+/**
+ * Warnings for teachers booked on a day listed in Teachers → Days Unavailable. The edit is
+ * still saved (a one-off swap is sometimes intended); Check For Conflicts flags it too.
+ */
+function dayOffNotices_(day, period, teachers) {
+  const off = teacherDaysOff_();
+  return teachers
+    .filter(t => (off[ScheduleParser.normalizeName(t)] || []).indexOf(day) !== -1)
+    .map(t => day + ' P' + period + ': ' + t + ' is marked unavailable on ' + day + ' (Teachers → Days Unavailable) — saved anyway, please check.');
 }
 
 /** Writes Subject, Teacher and Room (columns E:G) of Master_Schedule row index i (0-based in values). */

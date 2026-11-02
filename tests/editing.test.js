@@ -19,7 +19,7 @@ function small(schedule, teachers, classes) {
   const put = (name, rows, w) => rows.length && env.ss.getSheetByName(name).getRange(2, 1, rows.length, w).setValues(rows);
   put('Teachers', teachers.map(t => [t, '', 40, '', '']), 5);
   put('Classes', (classes || ['6th A', '6th B', '7th A']).map(c => [c, 'Middle', '']), 3);
-  put('Master_Schedule', schedule, 8);
+  put('Master_Schedule', schedule, schedule.length ? schedule[0].length : 8);
   return { env, api, ss: env.ss };
 }
 const rows = ss => { const sh = ss.getSheetByName('Master_Schedule'); return sh.getLastRow() < 2 ? [] : sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues(); };
@@ -50,34 +50,34 @@ const STAFF = ['Asha', 'Bina', 'Chetan', 'Deepa'];
 
 test('Class_View: one teacher picked on a split period whose groups are all taken is refused and the view is put back', () => {
   const { env, api, ss } = small(SPLIT, STAFF);
-  const cv = classEdit(env, api, '6th A', 7, 2, 'Deepa');
+  const cv = classEdit(env, api, '6th A', 7, 3, 'Deepa');
   assert.deepEqual(slot(ss, '6th A', 'Monday', 1).slice(4, 6), ['Hindi / IT', 'Asha / Bina + Chetan'], 'nothing saved');
   assert.equal(lastToast(env).title, 'Not saved');
   assert.match(lastToast(env).msg, /all 2 groups already have a teacher/);
-  assert.equal(cv.getRange(7, 2).getValue(), 'Asha / Bina + Chetan', 'typed text reverted');
+  assert.equal(cv.getRange(7, 3).getValue(), 'Asha / Bina + Chetan', 'typed text reverted');
 });
 
 test('Class_View: picking teachers one at a time from the dropdown fills the groups in subject order', () => {
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Hindi / IT / Art', '', '', '']], STAFF);
-  classEdit(env, api, '6th A', 7, 2, 'Asha');
+  classEdit(env, api, '6th A', 7, 3, 'Asha');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], 'Asha / - / -');
-  classEdit(env, api, '6th A', 7, 2, 'Bina');
-  classEdit(env, api, '6th A', 7, 2, 'Deepa');
+  classEdit(env, api, '6th A', 7, 3, 'Bina');
+  classEdit(env, api, '6th A', 7, 3, 'Deepa');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], 'Asha / Bina / Deepa');
-  classEdit(env, api, '6th A', 7, 2, 'Bina'); // already there: no change, no error
+  classEdit(env, api, '6th A', 7, 3, 'Bina'); // already there: no change, no error
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], 'Asha / Bina / Deepa');
-  classEdit(env, api, '6th A', 7, 2, ''); // clearing the teacher cell starts again
+  classEdit(env, api, '6th A', 7, 3, ''); // clearing the teacher cell starts again
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], '');
   // a single-subject period keeps the normal dropdown: the pick replaces the teacher
-  classEdit(env, api, '6th B', 6, 2, [['Maths'], ['Asha']]);
-  classEdit(env, api, '6th B', 7, 2, 'Chetan');
+  classEdit(env, api, '6th B', 6, 3, [['Maths'], ['Asha']]);
+  classEdit(env, api, '6th B', 7, 3, 'Chetan');
   assert.equal(slot(ss, '6th B', 'Monday', 1)[5], 'Chetan');
 });
 
 test('Teacher dropdowns list names A→Z', () => {
   const { api, ss } = small([], ['Zoya', 'asha', 'Bina']);
   api.ClassViewManager.renderClassView('6th A');
-  assert.deepEqual(plain(ss.getSheetByName('Class_View').getRange(7, 2).getDataValidation().list), ['asha', 'Bina', 'Zoya']);
+  assert.deepEqual(plain(ss.getSheetByName('Class_View').getRange(7, 3).getDataValidation().list), ['asha', 'Bina', 'Zoya']);
   api.TeacherViewManager.renderTeacherView('Zoya');
   assert.deepEqual(plain(ss.getSheetByName('Teacher_View').getRange('B3').getDataValidation().list), ['asha', 'Bina', 'Zoya']);
   assert.deepEqual(plain(api.apiGetTeachers()), ['asha', 'Bina', 'Zoya']);
@@ -85,14 +85,14 @@ test('Teacher dropdowns list names A→Z', () => {
 
 test('Class_View: a third subject without a third teacher group is refused', () => {
   const { env, api, ss } = small(SPLIT, STAFF);
-  classEdit(env, api, '6th A', 6, 2, 'Hindi / IT / Art');
+  classEdit(env, api, '6th A', 6, 3, 'Hindi / IT / Art');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[4], 'Hindi / IT');
   assert.match(lastToast(env).msg, /3 groups .* but 2 teacher groups/);
 });
 
 test('Class_View: subject and teacher typed together in full form are saved aligned', () => {
   const { env, api, ss } = small(SPLIT, STAFF);
-  classEdit(env, api, '6th A', 6, 2, [['Hindi / IT / Art'], ['Asha / Bina + Chetan / Deepa']]);
+  classEdit(env, api, '6th A', 6, 3, [['Hindi / IT / Art'], ['Asha / Bina + Chetan / Deepa']]);
   const r = slot(ss, '6th A', 'Monday', 1);
   assert.deepEqual([r[4], r[5]], ['Hindi / IT / Art', 'Asha / Bina + Chetan / Deepa']);
   const lanes = plain(api.ScheduleParser.parseLanes({ Subject: r[4], Teacher: r[5] }).lanes).map(l => [l.subject, l.teachers]);
@@ -102,7 +102,7 @@ test('Class_View: subject and teacher typed together in full form are saved alig
 
 test('Class_View: "-" keeps an empty group in place', () => {
   const { env, api, ss } = small(SPLIT, STAFF);
-  classEdit(env, api, '6th A', 7, 2, 'Asha / -');
+  classEdit(env, api, '6th A', 7, 3, 'Asha / -');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], 'Asha / -');
   assert.notEqual(lastToast(env).title, 'Not saved');
 });
@@ -111,14 +111,14 @@ test('Class_View: "-" keeps an empty group in place', () => {
 
 test('Class_View: an unknown teacher name is refused', () => {
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', '']], STAFF);
-  classEdit(env, api, '6th A', 7, 2, 'Ashaa');
+  classEdit(env, api, '6th A', 7, 3, 'Ashaa');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], 'Asha');
   assert.match(lastToast(env).msg, /unknown teacher "Ashaa"/);
 });
 
 test('Class_View: a teacher name typed into the subject row is refused', () => {
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', '']], STAFF);
-  classEdit(env, api, '6th A', 6, 2, 'Bina');
+  classEdit(env, api, '6th A', 6, 3, 'Bina');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[4], 'Maths');
   assert.match(lastToast(env).msg, /"Bina" is a teacher name/);
 });
@@ -128,13 +128,13 @@ test('Class_View: booking a busy teacher is refused; the same subject in the sam
     ['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', ''],
     ['Monday', 1, '6th B', 'Middle', 'Science', 'Bina', '', ''],
   ], STAFF);
-  classEdit(env, api, '6th A', 7, 2, 'Bina');
+  classEdit(env, api, '6th A', 7, 3, 'Bina');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], 'Asha', 'clash refused');
   assert.match(lastToast(env).msg, /Bina already teaches 6th B \(Science\)/);
   // Same subject + same grade = combined lecture, allowed
-  classEdit(env, api, '6th A', 6, 2, [['Science'], ['Bina']]);
+  classEdit(env, api, '6th A', 6, 3, [['Science'], ['Bina']]);
   assert.deepEqual(slot(ss, '6th A', 'Monday', 1).slice(4, 6), ['Science', 'Bina']);
-  const note = env.ss.getSheetByName('Class_View').getRange(6, 2).getNote();
+  const note = env.ss.getSheetByName('Class_View').getRange(6, 3).getNote();
   assert.match(note, /Taught together:\n• Science — Bina: with 6th B/, 'view redrawn with the new note');
 });
 
@@ -143,7 +143,7 @@ test('Class_View: an edit next to an existing clash is not blocked by that clash
     ['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', ''],
     ['Monday', 1, '7th A', 'Middle', 'Maths', 'Asha', '', ''], // different grade = existing clash
   ], STAFF, ['6th A', '6th B', '7th A']);
-  classEdit(env, api, '6th A', 6, 2, 'Mathematics');
+  classEdit(env, api, '6th A', 6, 3, 'Mathematics');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[4], 'Mathematics');
 });
 
@@ -151,11 +151,11 @@ test('Class_View: an edit next to an existing clash is not blocked by that clash
 
 test('Class_View: clearing only the subject is refused; clearing both frees the period', () => {
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', '']], STAFF);
-  classEdit(env, api, '6th A', 6, 2, '');
+  classEdit(env, api, '6th A', 6, 3, '');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[4], 'Maths');
   assert.match(lastToast(env).msg, /subject was cleared but the teacher was not/);
-  classEdit(env, api, '6th A', 6, 2, [[''], ['']]);
-  assert.equal(slot(ss, '6th A', 'Monday', 1), undefined, 'row removed');
+  classEdit(env, api, '6th A', 6, 3, [[''], ['']]);
+  assert.deepEqual(slot(ss, '6th A', 'Monday', 1).slice(4, 6), ['', ''], 'row kept, period now free');
 });
 
 test('Class_View redraws after an edit: a lecture that stops being combined loses its colour and note', () => {
@@ -165,15 +165,15 @@ test('Class_View redraws after an edit: a lecture that stops being combined lose
   ], STAFF);
   api.ClassViewManager.renderClassView('6th A');
   const cv = env.ss.getSheetByName('Class_View');
-  assert.equal(cv.getRange(6, 2).getBackground(), '#F5EEF8');
-  classEdit(env, api, '6th A', 6, 2, [['Art'], ['Deepa']]);
-  assert.equal(cv.getRange(6, 2).getBackground(), '#EBF5FB');
-  assert.equal(cv.getRange(6, 2).getNote(), '');
+  assert.equal(cv.getRange(6, 3).getBackground(), '#F5EEF8');
+  classEdit(env, api, '6th A', 6, 3, [['Art'], ['Deepa']]);
+  assert.equal(cv.getRange(6, 3).getBackground(), '#EBF5FB');
+  assert.equal(cv.getRange(6, 3).getNote(), '');
 });
 
 test('Class_View with two classes selected writes one row per class', () => {
   const { env, api, ss } = small([], STAFF);
-  classEdit(env, api, '6th A, 6th B', 6, 3, [['Music'], ['Deepa']]);
+  classEdit(env, api, '6th A, 6th B', 6, 4, [['Music'], ['Deepa']]);
   assert.deepEqual(slot(ss, '6th A', 'Monday', 2).slice(4, 6), ['Music', 'Deepa']);
   assert.deepEqual(slot(ss, '6th B', 'Monday', 2).slice(4, 6), ['Music', 'Deepa']);
   assert.equal(rows(ss).filter(r => /,/.test(r[2])).length, 0, 'no combined "6th A, 6th B" row');
@@ -183,7 +183,7 @@ test('Class_View with two classes selected writes one row per class', () => {
 
 test('Teacher_View: typing a class with a new subject replaces the lesson instead of splitting the class', () => {
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', '']], STAFF);
-  teacherEdit(env, api, 'Bina', 6, 2, '6th A - Science');
+  teacherEdit(env, api, 'Bina', 6, 3, '6th A - Science');
   assert.deepEqual(slot(ss, '6th A', 'Monday', 1).slice(4, 6), ['Science', 'Bina']);
   assert.equal(lastToast(env).title, 'Saved');
   assert.match(lastToast(env).msg, /6th A Maths — Asha replaced by Bina/);
@@ -194,7 +194,7 @@ test('Teacher_View: a bare class name takes over the lesson, and the old class i
     ['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', ''],
     ['Monday', 1, '6th B', 'Middle', 'Science', 'Bina', '', ''],
   ], STAFF);
-  teacherEdit(env, api, 'Asha', 6, 2, '6th B');
+  teacherEdit(env, api, 'Asha', 6, 3, '6th B');
   assert.deepEqual(slot(ss, '6th B', 'Monday', 1).slice(4, 6), ['Science', 'Asha'], 'replaced, not co-teaching');
   assert.match(lastToast(env).msg, /6th A Maths now has no teacher/);
   assert.match(lastToast(env).msg, /Bina replaced by Asha/);
@@ -202,7 +202,7 @@ test('Teacher_View: a bare class name takes over the lesson, and the old class i
 
 test('Teacher_View: a split subject typed here is refused (groups are set up in Class_View)', () => {
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', '']], STAFF);
-  teacherEdit(env, api, 'Bina', 6, 2, '6th A - Maths / Science');
+  teacherEdit(env, api, 'Bina', 6, 3, '6th A - Maths / Science');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], 'Asha');
   assert.match(lastToast(env).msg, /type one subject here/);
 });
@@ -212,10 +212,10 @@ test('Teacher_View: a split subject typed here is refused (groups are set up in 
 test('Day names in any case show in every view, and an edit in Master_Schedule writes them back as "Monday"', () => {
   const { env, api, ss } = small([['monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', '']], STAFF);
   api.TeacherViewManager.renderTeacherView('Asha');
-  assert.match(String(ss.getSheetByName('Teacher_View').getRange(6, 2).getValue()), /6th A/, 'Teacher_View');
+  assert.match(String(ss.getSheetByName('Teacher_View').getRange(6, 3).getValue()), /6th A/, 'Teacher_View');
   api.TeacherDayViewManager.renderTeacherDayView('Monday', 'All Classes');
   const tdv = ss.getSheetByName('Teacher_Day_View');
-  assert.match(String(tdv.getRange(6, 2).getValue()), /6th A/, 'Teacher_Day_View');
+  assert.match(String(tdv.getRange(6, 3).getValue()), /6th A/, 'Teacher_Day_View');
   const web = plain(api.apiWebGetTimetable('teacher', 'Asha'));
   assert.match(web.rows[0].cells[0], /6th A · Maths/, 'web page');
   const ms = ss.getSheetByName('Master_Schedule');
@@ -243,7 +243,7 @@ test('After a view edit, Clash Status, teacher load and the change log are up to
     ['Monday', 2, '6th B', 'Middle', 'Science', 'Asha', '', ''],
   ], STAFF);
   api.validateSchedule_();
-  teacherEdit(env, api, 'Asha', 6, 3, 'FREE'); // Monday P2
+  teacherEdit(env, api, 'Asha', 6, 4, 'FREE'); // Monday P2
   const teachers = ss.getSheetByName('Teachers').getRange(2, 1, 4, 5).getValues();
   assert.equal(teachers.find(t => t[0] === 'Asha')[4], 1, 'Total Hours Scheduled recomputed');
   const log = ss.getSheetByName('Change_Log');
@@ -256,14 +256,15 @@ test('Deleting a Master_Schedule row refreshes the views (change trigger)', () =
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', '']], STAFF);
   api.ClassViewManager.renderClassView('6th A');
   const cv = ss.getSheetByName('Class_View');
-  assert.equal(cv.getRange(6, 2).getValue(), 'Maths');
+  assert.equal(cv.getRange(6, 3).getValue(), 'Maths');
   ss.getSheetByName('Master_Schedule').deleteRow(2);
+  ss.setActiveSheet(ss.getSheetByName('Master_Schedule')); // the editor is on the tab they deleted from
   api.onScheduleChange({ source: ss, changeType: 'OTHER', triggerUid: env.properties.CHANGE_TRIGGER_UID });
-  assert.equal(cv.getRange(6, 2).getValue(), 'Maths', 'other change types are ignored');
+  assert.equal(cv.getRange(6, 3).getValue(), 'Maths', 'other change types are ignored');
   api.onScheduleChange({ source: ss, changeType: 'REMOVE_ROW', triggerUid: 'someone-else' });
-  assert.equal(cv.getRange(6, 2).getValue(), 'Maths', 'unrecorded trigger ignored');
+  assert.equal(cv.getRange(6, 3).getValue(), 'Maths', 'unrecorded trigger ignored');
   api.onScheduleChange({ source: ss, changeType: 'REMOVE_ROW', triggerUid: env.properties.CHANGE_TRIGGER_UID });
-  assert.equal(cv.getRange(6, 2).getValue(), '');
+  assert.equal(cv.getRange(6, 3).getValue(), '');
 });
 
 test('Refresh adds a warning-only protection to the generated tabs', () => {
@@ -352,19 +353,24 @@ test('Master_Schedule: clearing both cells keeps the row; a row still being fill
 
 // ───────────────────────────────────────────── duplicate rows (two rows, one class, one period)
 
-test('Duplicate rows: Class_View edits the merged period and saves it into one row; Master_Schedule edits only the row typed in', () => {
+test('Duplicate rows: Class_View refuses to edit the merged period and keeps both rows; Master_Schedule edits only the row typed in', () => {
   const dupRows = () => [
-    ['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '', ''],
-    ['Monday', 1, '6th A', 'Middle', 'Art', 'Deepa', '', ''],
+    ['Monday', 1, '6th A', 'Middle', 'Maths', 'Asha', '301', '', 'keep this note'],
+    ['Monday', 1, '6th A', 'Middle', 'Art', 'Deepa', 'LIB-1', '', 'and this one'],
   ];
-  // Class_View: the view shows "Maths / Art"; editing the teacher row saves one row
+  // Class_View: the view shows "Maths / Art"; saving it would have to merge the rows and drop
+  // the second room and note, so it is refused and both rows stay exactly as they were
   let { env, api, ss } = small(dupRows(), STAFF);
   api.ClassViewManager.renderClassView('6th A');
-  assert.equal(ss.getSheetByName('Class_View').getRange(6, 2).getValue(), 'Maths / Art');
-  classEdit(env, api, '6th A', 7, 2, 'Asha / Chetan');
-  const left = rows(ss).filter(r => r[2] === '6th A');
-  assert.equal(left.length, 1, 'duplicate merged away');
-  assert.deepEqual(left[0].slice(4, 6), ['Maths / Art', 'Asha / Chetan']);
+  assert.equal(ss.getSheetByName('Class_View').getRange(6, 3).getValue(), 'Maths / Art');
+  classEdit(env, api, '6th A', 7, 3, 'Asha / Chetan');
+  const ms = ss.getSheetByName('Master_Schedule');
+  assert.deepEqual(plain(ms.getRange(2, 1, 2, 9).getValues()).map(r => [r[4], r[5], r[6], r[8]]),
+    [['Maths', 'Asha', '301', 'keep this note'], ['Art', 'Deepa', 'LIB-1', 'and this one']]);
+  assert.match(lastToast(env).msg, /6th A has 2 rows for this period in Master_Schedule \(rows 2, 3\)/);
+  // Re-saving the cell unchanged is refused the same way: nothing is merged or deleted
+  classEdit(env, api, '6th A', 7, 3, 'Asha / Deepa');
+  assert.equal(rows(ss).filter(r => r[2] === '6th A').length, 2);
   // Master_Schedule: editing the second row leaves the first alone
   ({ env, api, ss } = small(dupRows(), STAFF));
   scheduleEdit(env, api, 3, 6, 'Chetan');

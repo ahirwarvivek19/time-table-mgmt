@@ -25,7 +25,10 @@ test('preview page carries every class, teacher and day view as the sheet render
   assert.equal(data.dayView.length, 6);
   assert.equal(data.grid.length, 28);
   assert.equal(data.summary.rows, 1344);
-  assert.deepEqual(data.periods[0], { label: 'Period 1', time: '9:30–10:20' });
+  assert.deepEqual(data.periods[0], { label: 'Period 1', time: '10:00–10:50' });
+  assert.deepEqual(data.columns.map(c => c.label || c.period), ['Prayer', 0, 1, 2, 3, 'Lunch', 4, 5, 6, 7], 'Prayer and Lunch columns');
+  assert.equal(data.columns[5].time, '12:50–1:20');
+  assert.equal(data.grid[0].length, 9, 'grid rows hold the class and 8 periods (breaks come from columns)');
   const c11 = data.classes.find(c => c.name === '11th C');
   const [subject, teacher, bg, note] = c11.days[0][0];
   assert.equal(subject, 'Hindi (E.M) / English (H.M)');

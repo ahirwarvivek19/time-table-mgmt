@@ -62,12 +62,12 @@ test('2026-27 import: new bell times in the headers; 11th C medium groups show a
   const { api, ss } = imported();
   api.ClassViewManager.renderClassView('11th C');
   const cv = ss.getSheetByName('Class_View');
-  assert.equal(cv.getRange(5, 2).getValue(), 'Period 1\n9:30–10:20');
-  assert.equal(cv.getRange(5, 6).getValue(), 'Period 5\n12:50–1:30');
-  assert.equal(cv.getRange(5, 9).getValue(), 'Period 8\n2:50–3:30');
-  assert.equal(cv.getRange(6, 2).getValue(), 'Hindi (E.M) / English (H.M)');
-  assert.equal(cv.getRange(7, 2).getValue(), 'Ekta Gour / Rajesh Kumar Bairagi');
-  const note = cv.getRange(6, 2).getNote();
+  assert.equal(cv.getRange(5, 3).getValue(), 'Period 1\n10:00–10:50');
+  assert.equal(cv.getRange(5, 8).getValue(), 'Period 5\n1:20–2:00');
+  assert.equal(cv.getRange(5, 11).getValue(), 'Period 8\n3:20–4:00');
+  assert.equal(cv.getRange(6, 3).getValue(), 'Hindi (E.M) / English (H.M)');
+  assert.equal(cv.getRange(7, 3).getValue(), 'Ekta Gour / Rajesh Kumar Bairagi');
+  const note = cv.getRange(6, 3).getNote();
   assert.match(note, /Split class — 2 groups/);
   assert.match(note, /Taught together:\n• Hindi \(E\.M\) — Ekta Gour: with 11th B, 11th D/);
   assert.doesNotMatch(note, /Clash/, 'a medium mark on one section only is the same lecture');
@@ -154,7 +154,7 @@ test('Teacher_View: moving a period removes the teacher from the old class', () 
     ['Monday', 1, '6th A', 'Middle', 'Maths', 'A Teacher', '', ''],
     ['Monday', 1, '7th B', 'Middle', 'Science', 'B Teacher', '', ''],
   ], ['A Teacher', 'B Teacher']);
-  teacherViewEdit(env, api, 'A Teacher', 6, 2, '7th B - Maths'); // Monday P1
+  teacherViewEdit(env, api, 'A Teacher', 6, 3, '7th B - Maths'); // Monday P1
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], '', 'no longer in 6th A');
   // A takes the 7th B period: B Teacher is replaced (and told), not silently paired up
   assert.equal(slot(ss, '7th B', 'Monday', 1)[5], 'A Teacher');
@@ -166,23 +166,24 @@ test('Teacher_View: changing one teacher\'s subject keeps the other optional sub
   const { env, api, ss } = small([
     ['Monday', 1, '6th A', 'Middle', 'English / Sanskrit / IT', 'A Teacher / B Teacher / C Teacher', '', ''],
   ], ['A Teacher', 'B Teacher', 'C Teacher']);
-  teacherViewEdit(env, api, 'C Teacher', 6, 2, '6th A - Beauty');
+  teacherViewEdit(env, api, 'C Teacher', 6, 3, '6th A - Beauty');
   assert.equal(slot(ss, '6th A', 'Monday', 1)[4], 'English / Sanskrit / Beauty');
 });
 
-test('Teacher_View: FREE removes the teacher and their paired subject', () => {
+test('Teacher_View: FREE removes the teacher but keeps their group, with a notice', () => {
   const { env, api, ss } = small([
     ['Monday', 1, '6th A', 'Middle', 'Hindi / IT', 'A Teacher / B Teacher', '', ''],
   ], ['A Teacher', 'B Teacher']);
-  teacherViewEdit(env, api, 'B Teacher', 6, 2, 'FREE');
+  teacherViewEdit(env, api, 'B Teacher', 6, 3, 'FREE');
   const r = slot(ss, '6th A', 'Monday', 1);
-  assert.equal(r[5], 'A Teacher');
-  assert.equal(r[4], 'Hindi');
+  assert.equal(r[5], 'A Teacher / -');
+  assert.equal(r[4], 'Hindi / IT');
+  assert.match(env.ss.toasts[env.ss.toasts.length - 1].msg, /6th A IT group now has no teacher/);
 });
 
 test('Teacher_View: an unknown class is rejected instead of creating a phantom row', () => {
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'A Teacher', '', '']], ['A Teacher']);
-  teacherViewEdit(env, api, 'A Teacher', 6, 2, '6A - Maths');
+  teacherViewEdit(env, api, 'A Teacher', 6, 3, '6A - Maths');
   assert.equal(scheduleRows(ss).length, 1);
   assert.equal(slot(ss, '6th A', 'Monday', 1)[5], 'A Teacher');
   assert.ok(env.ss.toasts.some(t => /unknown class/.test(t.msg)));
@@ -196,7 +197,7 @@ test('Teacher_Day_View uses the same write-back rules', () => {
   const sheet = ss.getSheetByName('Teacher_Day_View');
   const rowB = 6 + 1; // second teacher row
   assert.equal(sheet.getRange(rowB, 1).getValue(), 'B Teacher');
-  const range = sheet.getRange(rowB, 4); // Period 3
+  const range = sheet.getRange(rowB, api.viewColumnOfPeriod_(3)); // Period 3
   range.setValue('6th A - Maths');
   api.onEdit(editEvent(env, range, { triggerUid: env.properties.EDIT_TRIGGER_UID }));
   assert.equal(slot(ss, '6th A', 'Tuesday', 3)[5], 'B Teacher', 'B takes the period (same replace rule as Teacher_View)');
@@ -211,7 +212,7 @@ test('Class_View: pasting a block syncs every cell, not just the first', () => {
   ], ['A Teacher', 'B Teacher']);
   api.ClassViewManager.renderClassView('6th A');
   const cv = ss.getSheetByName('Class_View');
-  const range = cv.getRange(6, 2, 1, 3); // Monday subject row, P1–P3
+  const range = cv.getRange(6, 3, 1, 3); // Monday subject row, P1–P3
   range.setValues([['Science', 'English', 'Art']]);
   api.onEdit(editEvent(env, range, { triggerUid: env.properties.EDIT_TRIGGER_UID }));
   assert.equal(slot(ss, '6th A', 'Monday', 1)[4], 'Science');
@@ -222,7 +223,7 @@ test('Class_View: pasting a block syncs every cell, not just the first', () => {
 test('Class_View: teacher typed into an empty slot is saved', () => {
   const { env, api, ss } = small([], ['A Teacher']);
   api.ClassViewManager.renderClassView('6th A');
-  const range = ss.getSheetByName('Class_View').getRange(9, 3); // Tuesday teacher row, P2
+  const range = ss.getSheetByName('Class_View').getRange(9, 4); // Tuesday teacher row, P2
   range.setValue('A Teacher');
   api.onEdit(editEvent(env, range, { triggerUid: env.properties.EDIT_TRIGGER_UID }));
   assert.equal(slot(ss, '6th A', 'Tuesday', 2)[5], 'A Teacher');
@@ -246,7 +247,7 @@ test('simple onEdit steps aside once the installable trigger exists (no double p
   assert.equal(env.triggers.filter(t => t.getHandlerFunction() === 'onScheduleChange').length, 1, 'one change trigger');
 
   api.ClassViewManager.renderClassView('6th A');
-  const range = ss.getSheetByName('Class_View').getRange(6, 2);
+  const range = ss.getSheetByName('Class_View').getRange(6, 3);
   range.setValue('Science');
   api.onEdit(editEvent(env, range)); // simple trigger call: no triggerUid
   assert.equal(slot(ss, '6th A', 'Monday', 1)[4], 'Maths', 'simple trigger ignored');
@@ -261,7 +262,7 @@ test('Master_Schedule edit refreshes a Teacher_View showing a multi-teacher cell
   const range = ms.getRange(2, 6);
   range.setValue('A Teacher / B Teacher');
   api.onEdit(editEvent(env, range, { triggerUid: env.properties.EDIT_TRIGGER_UID }));
-  assert.match(String(ss.getSheetByName('Teacher_View').getRange(6, 2).getValue()), /6th A/);
+  assert.match(String(ss.getSheetByName('Teacher_View').getRange(6, 3).getValue()), /6th A/);
 });
 
 // ───────────────────────────────────────────── other views
@@ -271,24 +272,31 @@ test('Master grid shows the day list when an entry runs on 5 of 6 days', () => {
   const rows = days.map(d => [d, 1, '6th A', 'Middle', 'Maths', 'A Teacher', '', '']).concat([['Saturday', 1, '6th A', 'Middle', 'Bal Sabha', 'A Teacher', '', '']]);
   const { api, ss } = small(rows, ['A Teacher']);
   api.generateMasterGrid(true);
-  const cell = ss.getSheetByName('Master_Grid_View').getRange(2, 2).getValue();
+  const cell = ss.getSheetByName('Master_Grid_View').getRange(2, 3).getValue();
   assert.match(cell, /Maths \(A Teacher\) \[Mon,Tue,Wed,Thu,Fri\]/);
   assert.match(cell, /Bal Sabha \(A Teacher\) \[Sat\]/);
 });
 
-test('Teacher availability accepts "monday" and marks unavailable teachers', () => {
-  const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'A Teacher', '', '']],
-    [['A Teacher', '', 40, '', ''], ['B Teacher', '', 40, 'Monday', '']]);
-  env.prompts.push('monday');
-  api.generateTeacherAvailabilityGrid();
-  const grid = ss.getSheetByName('Teacher_Availability_Grid').getRange(1, 1, 3, 3).getValues();
-  assert.equal(grid[0][0], 'Teacher (Monday)');
-  assert.equal(grid[1][1], 'BUSY (6th A)');
-  assert.equal(grid[1][2], 'FREE');
-  assert.equal(grid[2][1], 'UNAVAILABLE');
-  env.prompts.push('Funday');
-  api.generateTeacherAvailabilityGrid();
-  assert.match(env.alerts[env.alerts.length - 1], /Please enter a school day/);
+test('Teacher_Day_View shows DAY OFF for a teacher free periods on a day in "Days Unavailable"', () => {
+  const { api, ss } = small([
+    ['Monday', 1, '6th A', 'Middle', 'Maths', 'A Teacher', '', ''],
+    ['monday', 2, '6th A', 'Middle', 'Science', 'B Teacher', '', ''],
+  ], [['A Teacher', '', 40, '', ''], ['B Teacher', '', 40, 'monday, Friday', '']]);
+  api.TeacherDayViewManager.renderTeacherDayView('Monday', 'All Classes');
+  const sh = ss.getSheetByName('Teacher_Day_View');
+  // Teacher name, then periods 1–3 (skipping the Prayer column)
+  const rows = plain(sh.getRange(6, 1, 2, 5).getValues()).map(r => [r[0], r[2], r[3], r[4]]);
+  assert.deepEqual(rows[0], ['A Teacher', '6th A - Maths', 'FREE', 'FREE']);
+  assert.equal(rows[1][0], 'B Teacher');
+  assert.equal(rows[1][1], 'DAY OFF');
+  assert.match(rows[1][2], /6th A/, 'a lesson booked on a day off still shows');
+  assert.equal(rows[1][3], 'DAY OFF');
+  // On another day B Teacher is just FREE
+  api.TeacherDayViewManager.renderTeacherDayView('Tuesday', 'All Classes');
+  assert.equal(sh.getRange(7, 3).getValue(), 'FREE');
+  // Re-saving a DAY OFF cell (e.g. a pasted block) changes nothing
+  assert.equal(api.updateTeacherSlot_('B Teacher', 'Monday', 1, 'DAY OFF', [], []), '');
+  assert.equal(ss.getSheetByName('Master_Schedule').getLastRow(), 3);
 });
 
 // ───────────────────────────────────────────── cover manager
@@ -332,7 +340,7 @@ test('ScheduleParser.assignTeacher / removeTeacher keep teacher↔subject pairs 
   assert.deepEqual(plain(P.assignTeacher('A', 'Hindi', 'B', 'IT')), { teacher: 'B', subject: 'IT' });
   assert.deepEqual(plain(P.assignTeacher('A', 'Hindi', 'B', '')), { teacher: 'B', subject: 'Hindi' });
   assert.deepEqual(plain(P.assignTeacher('A / B', 'Hindi / IT', 'b', 'Beauty')), { teacher: 'A / B', subject: 'Hindi / Beauty' });
-  assert.deepEqual(plain(P.removeTeacher('A / B', 'Hindi / IT', 'A')), { teacher: 'B', subject: 'IT', removed: true });
+  assert.deepEqual(plain(P.removeTeacher('A / B', 'Hindi / IT', 'A')), { teacher: '- / B', subject: 'Hindi / IT', removed: true });
   assert.deepEqual(plain(P.removeTeacher('A / B', 'Science', 'B')), { teacher: 'A', subject: 'Science', removed: true });
   assert.equal(P.removeTeacher('A', 'X', 'Z').removed, false);
   assert.ok(P.rowIncludesTeacher({ Teacher: 'Neha  Jhala', Subject: 'Maths' }, 'neha jhala'));
@@ -370,7 +378,7 @@ test('read-only web page API returns class and teacher grids and rejects unknown
 test('only the recorded installable trigger processes edits (duplicates and legacy triggers are ignored)', () => {
   const { env, api, ss } = small([['Monday', 1, '6th A', 'Middle', 'Maths', 'A Teacher', '', '']], ['A Teacher']);
   api.ClassViewManager.renderClassView('6th A');
-  const range = ss.getSheetByName('Class_View').getRange(6, 2);
+  const range = ss.getSheetByName('Class_View').getRange(6, 3);
   range.setValue('Science');
   api.onEdit(editEvent(env, range, { triggerUid: 'someone-elses-trigger' }));
   assert.equal(slot(ss, '6th A', 'Monday', 1)[4], 'Maths', 'unrecorded trigger ignored');
@@ -386,12 +394,12 @@ test('Teacher_View: clash cells and partial edits of a combined row are rejected
   const { env, api, ss } = small([
     ['monday ', 1, '6th A, 6th B', 'Middle', 'Maths', 'A Teacher', '', ''],
   ], ['A Teacher']);
-  teacherViewEdit(env, api, 'A Teacher', 6, 2, '6th A - Maths');
+  teacherViewEdit(env, api, 'A Teacher', 6, 3, '6th A - Maths');
   assert.equal(slot(ss, '6th A, 6th B', 'monday ', 1)[5], 'A Teacher', 'combined row untouched');
   assert.ok(env.ss.toasts.some(t => /combined row/.test(t.msg)));
-  teacherViewEdit(env, api, 'A Teacher', 6, 2, '6th A\nMaths\n---\n7th A\nScience');
+  teacherViewEdit(env, api, 'A Teacher', 6, 3, '6th A\nMaths\n---\n7th A\nScience');
   assert.ok(env.ss.toasts.some(t => /has a clash/.test(t.msg)));
-  teacherViewEdit(env, api, 'A Teacher', 6, 2, 'FREE');
+  teacherViewEdit(env, api, 'A Teacher', 6, 3, 'FREE');
   assert.equal(slot(ss, '6th A, 6th B', 'monday ', 1)[5], '', '"monday " row matched by FREE');
 });
 
@@ -426,7 +434,7 @@ test('Menu is trimmed to the everyday actions, and every item points at a real f
   assert.equal(env.menus.length, 1, 'one menu, no submenus');
   const items = env.menus[0].items.filter(i => i !== '---');
   assert.deepEqual(items.map(i => i[1]), [
-    'refreshAllViews', 'runValidation', 'generateTeacherAvailabilityGrid', 'openCoverManagerUI',
+    'refreshAllViews', 'runValidation', 'openCoverManagerUI',
     'importExcelData', 'saveCurrentSheetAsPrefillData', 'setupInitialSpreadsheet'
   ]);
   items.forEach(([label, fn]) => assert.equal(typeof api[fn], 'function', label + ' → ' + fn));
@@ -473,11 +481,9 @@ test('Refresh rebuilds the Master Grid, so its rows match the classes after one 
   assert.ok(!text.includes(removed), removed + ' is gone from the grid');
 });
 
-test('Teacher Availability accepts schedule days written in any case', () => {
-  const { api, ss, env } = small([['monday', 1, '6th A', 'Middle', 'Maths', 'T One', '', '']], ['T One', 'T Two']);
-  env.prompts.push('Monday');
-  api.generateTeacherAvailabilityGrid();
-  const g = ss.getSheetByName('Teacher_Availability_Grid');
-  const row = g.getRange(1, 1, g.getLastRow(), 2).getValues().find(r => r[0] === 'T One');
-  assert.match(String(row[1]), /^BUSY/);
+test('Setup / Repair deletes the retired Teacher_Availability_Grid tab', () => {
+  const { api, ss } = small([], ['T One']);
+  ss.insertSheet('Teacher_Availability_Grid').getRange(1, 1).setValue('Teacher (Monday)');
+  api.setupInitialSpreadsheet();
+  assert.equal(ss.getSheetByName('Teacher_Availability_Grid'), null);
 });

@@ -63,7 +63,7 @@ class Range {
 }
 // Formatting calls the code makes but the tests don't inspect — chainable no-ops.
 ['setFontWeight', 'setFontWeights', 'setFontColor', 'setFontColors', 'setFontFamily', 'setFontSize', 'setHorizontalAlignment',
-  'setVerticalAlignment', 'setWrap', 'setBorder', 'setNumberFormat', 'setFontStyle', 'setFontLine', 'activate']
+  'setVerticalAlignment', 'setWrap', 'setBorder', 'setNumberFormat', 'setFontStyle', 'setFontLine', 'setVerticalText', 'activate']
   .forEach(m => { Range.prototype[m] = function () { return this; }; });
 
 class Sheet {
@@ -186,6 +186,7 @@ function createEnvironment() {
     },
     Logger: { log: () => {} },
     Utilities: {
+      sleep: () => {}, // simple-trigger sync check: no real waiting in tests
       formatDate: (d, tz, fmt) => {
         const pad = n => String(n).padStart(2, '0');
         if (fmt !== 'yyyy-MM-dd') throw new Error('mock formatDate supports yyyy-MM-dd only');

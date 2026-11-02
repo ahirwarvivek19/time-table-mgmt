@@ -64,7 +64,11 @@ function collect() {
   api.importExcelData();
   const ss = env.ss;
   const C = plain(api.CONFIG);
-  const days = C.DAYS, nP = C.PERIODS.length, nD = days.length;
+  const days = C.DAYS, nD = days.length;
+  // Views have Prayer / Lunch columns between the periods: read the full width, keep periods
+  const slots = plain(api.viewSlots_());
+  const nS = slots.length;
+  const periodsOnly = row => row.filter((c, k) => slots[k].period);
   const classes = plain(api.getClassNames_());
   const teachers = plain(api.getTeacherNames_());
   const check = plain(api.validateSchedule_()) || {};
@@ -76,21 +80,24 @@ function collect() {
     return {
       name,
       days: days.map((d, i) => {
-        const subj = readBlock(sh, 6 + 2 * i, 2, 1, nP)[0];
-        const tchr = readBlock(sh, 7 + 2 * i, 2, 1, nP)[0];
+        const subj = periodsOnly(readBlock(sh, 6 + 2 * i, 2, 1, nS)[0]);
+        const tchr = periodsOnly(readBlock(sh, 7 + 2 * i, 2, 1, nS)[0]);
         return subj.map((s, p) => [s.v, tchr[p].v, s.bg, s.note]);
       }),
     };
   });
-  const header = readBlock(ss.getSheetByName(C.SHEETS.CLASS_VIEW), 5, 2, 1, nP)[0]
+  const header = periodsOnly(readBlock(ss.getSheetByName(C.SHEETS.CLASS_VIEW), 5, 2, 1, nS)[0])
     .map((h, p) => ({ label: `Period ${p + 1}`, time: h.v.split('\n')[1] || '' }));
+  // Column order of every table: periods (index into `periods`) and breaks
+  let pIndex = 0;
+  const columns = slots.map(s => s.period ? { period: pIndex++ } : { label: s.name, time: s.time });
 
   // Teacher_View: rows 6–11 = Monday–Saturday.
   const load = new Map(plain(api.DataAccess.getSheetDataAsObjects(C.SHEETS.TEACHERS))
     .map(t => [text(t['Teacher Name']).trim(), { hours: Number(t['Total Hours Scheduled']) || 0, max: Number(t['Max Hours / Week']) || 0 }]));
   const teacherData = teachers.map(name => {
     api.TeacherViewManager.renderTeacherView(name);
-    const cells = readBlock(ss.getSheetByName(C.SHEETS.TEACHER_VIEW), 6, 2, nD, nP).map(r => r.map(c => [c.v, c.bg]));
+    const cells = readBlock(ss.getSheetByName(C.SHEETS.TEACHER_VIEW), 6, 2, nD, nS).map(r => periodsOnly(r).map(c => [c.v, c.bg]));
     return { name, ...(load.get(name) || { hours: 0, max: 0 }), cells };
   });
 
@@ -98,13 +105,14 @@ function collect() {
   const dayData = days.map(day => {
     api.TeacherDayViewManager.renderTeacherDayView(day, C.ALL_CLASSES);
     const sh = ss.getSheetByName(C.SHEETS.TEACHER_DAY_VIEW);
-    const rows = readBlock(sh, 6, 1, teachers.length, nP + 1);
-    return { day, rows: rows.map(r => ({ teacher: r[0].v, cells: r.slice(1).map(c => [c.v, c.bg]) })) };
+    const rows = readBlock(sh, 6, 1, teachers.length, nS + 1);
+    return { day, rows: rows.map(r => ({ teacher: r[0].v, cells: periodsOnly(r.slice(1)).map(c => [c.v, c.bg]) })) };
   });
 
   // Master_Grid_View: one row per class.
   api.generateMasterGrid(true);
-  const grid = ss.getSheetByName(C.SHEETS.MASTER_GRID).getRange(2, 1, classes.length, nP + 1).getValues().map(r => r.map(text));
+  const grid = ss.getSheetByName(C.SHEETS.MASTER_GRID).getRange(2, 1, classes.length, nS + 1).getValues()
+    .map(r => [text(r[0])].concat(periodsOnly(r.slice(1)).map(text)));
 
   // Rows Check For Conflicts flagged.
   const ms = ss.getSheetByName(C.SHEETS.SCHEDULE);
@@ -115,7 +123,7 @@ function collect() {
   return {
     generated: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
     sources: sourcesOf(),
-    days, periods: header,
+    days, periods: header, columns,
     summary: {
       classes: classes.length, teachers: teachers.length, rows: ms.getLastRow() - 1,
       splitSlots: check.splitSlots || 0, combinedLectures: check.combinedLectures || 0,

@@ -14,6 +14,8 @@
       th { background: #2C3E50; color: #fff; }
       td.day { background: #2C3E50; color: #ECF0F1; font-weight: bold; }
       td.free { background: #EAFAF1; color: #1E8449; }
+      th.brk { background: #566573; }
+      td.brk { background: #EAECEE; color: #566573; font-weight: bold; writing-mode: vertical-rl; letter-spacing: 2px; }
       #msg { color: #C0392B; margin: 8px 0; }
       @media print { .controls { display: none; } body { background: #fff; } }
     </style>
@@ -57,14 +59,27 @@
         $('title').textContent = 'Timetable · ' + data.title;
         var table = $('grid');
         table.innerHTML = '';
+        var slots = options.slots || options.periods;
         var head = el('tr');
         head.appendChild(el('th', 'Day'));
-        options.periods.forEach(function (p) { head.appendChild(el('th', 'Period ' + p.period + (p.time ? '\n' + p.time : ''))); });
+        slots.forEach(function (s) {
+          var label = s.period ? 'Period ' + s.period : s.name;
+          head.appendChild(el('th', label + (s.time ? '\n' + s.time : ''), s.period ? '' : 'brk'));
+        });
         table.appendChild(head);
-        data.rows.forEach(function (r) {
+        data.rows.forEach(function (r, i) {
           var tr = el('tr');
           tr.appendChild(el('td', r.day, 'day'));
-          r.cells.forEach(function (c) { tr.appendChild(c ? el('td', c) : el('td', 'FREE', 'free')); });
+          var k = 0; // index into r.cells (periods only)
+          slots.forEach(function (s) {
+            if (!s.period) {
+              // Prayer / Lunch: one cell down the whole table
+              if (i === 0) { var b = el('td', s.name.toUpperCase(), 'brk'); b.rowSpan = data.rows.length; tr.appendChild(b); }
+              return;
+            }
+            var c = r.cells[k++];
+            tr.appendChild(c ? el('td', c) : el('td', 'FREE', 'free'));
+          });
           table.appendChild(tr);
         });
       }

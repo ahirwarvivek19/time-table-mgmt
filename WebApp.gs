@@ -61,7 +61,9 @@ function apiWebGetOptions() {
     classes: unique(readObjects_(ss, S.CLASSES).map(c => c['Class Name'])),
     teachers: unique(readObjects_(ss, S.TEACHERS).map(t => t['Teacher Name'])),
     days: CONFIG.DAYS,
-    periods: CONFIG.PERIODS.map(p => ({ period: p, time: periodTime_(p) }))
+    periods: CONFIG.PERIODS.map(p => ({ period: p, time: periodTime_(p) })),
+    // Column order of the page: periods plus Prayer / Lunch, as in the sheet views
+    slots: viewSlots_().map(s => s.period ? { period: s.period, time: periodTime_(s.period) } : { name: s.name, time: s.time })
   };
 }
 
@@ -96,8 +98,17 @@ function apiWebGetTimetable(kind, name) {
     }
   });
 
+  // A teacher's free periods on a day in Teachers → Days Unavailable read DAY OFF, as in Teacher_Day_View
+  let offDays = [];
+  if (kind === 'teacher') {
+    const rec = readObjects_(ss, CONFIG.SHEETS.TEACHERS).find(t => ScheduleParser.sameName(t['Teacher Name'], match));
+    offDays = rec ? parseDaysList_(rec['Days Unavailable']).days : [];
+  }
   return {
     title: match,
-    rows: CONFIG.DAYS.map(d => ({ day: d, cells: CONFIG.PERIODS.map(p => [...new Set(grid[d][p])].join('\n')) }))
+    rows: CONFIG.DAYS.map(d => ({ day: d, cells: CONFIG.PERIODS.map(p => {
+      const text = [...new Set(grid[d][p])].join('\n');
+      return !text && offDays.indexOf(d) !== -1 ? CONFIG.DAY_OFF : text;
+    }) }))
   };
 }

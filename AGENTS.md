@@ -43,7 +43,6 @@ ClassViewManager.gs       Class_View render + applyClassViewEdit (checked write-
 TeacherViewManager.gs     Teacher_View render; updateTeacherSlot_ (shared write-back for both teacher views)
 TeacherDayViewManager.gs  Teacher_Day_View render + write-back
 MasterGrid.gs             Master_Grid_View (full generate / data-only refresh)
-TeacherAvailabilityGrid.gs  FREE / BUSY / UNAVAILABLE grid for one day
 Validation.gs             Conflict checks → Clash Status + summary
 CoverManager.gs / CoverManagerUI.html   Substitution dialog + API
 WebApp.gs / TimetableWeb.html   Optional read-only web page (doGet); deploy as "User accessing the web app" only
@@ -74,9 +73,8 @@ Timetable.xlsx            source timetable (sheets 6-8, 9-12, Teacherwise)
 Timetable System
 ├── 🔄 Refresh All Views            refreshAllViews()
 ├── ✅ Check For Conflicts           runValidation()
-├── 📊 Teacher Availability         generateTeacherAvailabilityGrid()
 ├── 👥 Cover Manager                openCoverManagerUI()
-├── 📥 Import Timetable            importExcelData()  (asks snapshot vs built-in when a snapshot exists)
+├── 📥 Import Timetable            importExcelData()  (always confirms; asks snapshot vs built-in when a snapshot exists)
 ├── 💾 Save Snapshot               saveCurrentSheetAsPrefillData()
 └── ⚙️ Setup / Repair               setupInitialSpreadsheet()  (tabs, headers, views, edit-sync trigger)
 ```
@@ -155,4 +153,7 @@ quotas/permissions are not simulated — check those manually (README → "Manua
 4. 11th C and 12th C are single classes; their Hindi- and English-medium groups are split periods marked `(H.M)` / `(E.M)`.
    (The older data had separate `11th C (H)` / `(E)` sections; `splitMedium` still reads those marks.)
 5. `PrefillData.gs` is generated — edit the converter, not the file. `RAW_PERIOD_ROWS` drives the bell times in every
-   view header; `CONFIG.PERIOD_TIMES` is only a fallback and a test keeps it in step.
+   view header; `CONFIG.PERIOD_TIMES` is only a fallback and a test keeps it in step. `RAW_BREAK_ROWS` (from `BREAKS`
+   in registry.js; fallback `CONFIG.BREAKS`) adds the Prayer / Lunch columns.
+6. View columns are not "1 + period": Prayer is column B and Lunch sits after period 4. Always map with
+   `viewColumnOfPeriod_` / `periodOfViewColumn_` / `viewWidth_` (Config.gs), in code and tests.

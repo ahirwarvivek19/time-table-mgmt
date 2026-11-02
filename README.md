@@ -5,7 +5,11 @@ School timetable on a Google Sheet, driven by Google Apps Script. One flat
 generated from it and can be edited directly — edits sync back automatically.
 
 Current data: **2026-27** timetable from `Timetable.xlsx`, 28 sections (6th A – 12th D), 78 teachers,
-1,344 periods (6 days × 8 periods, 9:30–3:30 with lunch 12:20–12:50).
+1,344 periods (6 days × 8 periods). Prayer 9:10–10:00, periods 10:00–4:00, lunch 12:50–1:20 after period 4.
+To change the timings, edit `PERIODS` in `tools/convert/registry.js`, run `npm run convert`, then push and run
+🔄 Refresh All Views (no Import needed).
+
+**Using the sheet day to day:** [Operating SOP (English)](docs/SOP.md) · [ऑपरेटिंग SOP (हिंदी)](docs/SOP.hi.md)
 
 ## Features
 
@@ -15,7 +19,7 @@ Current data: **2026-27** timetable from `Timetable.xlsx`, 28 sections (6th A �
   groups (`(H.M)` / `(E.M)`), and combined sections (one teacher, several sections) — combined lectures are not clashes.
 - **Conflict check.** Teacher clashes, room clashes, unavailable days, unknown teachers or classes, and teachers over their weekly
   maximum, with the reason written next to every affected row. Teacher load (`Total Hours Scheduled`) is kept up to date.
-- **Overviews.** `Master_Grid_View` (every class at a glance), `Teacher_Availability_Grid` (free / busy / unavailable for a day),
+- **Overviews.** `Master_Grid_View` (every class at a glance), `Teacher_Day_View` (who is free, busy or on a DAY OFF for a day),
   bell times in every period header, and colour marks with hover notes for split, combined and clashing periods.
 - **Cover Manager.** Pick a date and an absent teacher; it offers only teachers who are free, available and not already covering,
   and logs each substitution.
@@ -35,9 +39,8 @@ Current data: **2026-27** timetable from `Timetable.xlsx`, 28 sections (6th A �
 | `Master_Schedule` | One row per class / day / period. Edit here or in any view. |
 | `Class_View` | Pick a class in **B3** → weekly grid (subject row + teacher row per day). Editable. |
 | `Teacher_View` | Pick a teacher in **B3** → weekly grid. Type `6th A - Mathematics` to take that period, or `FREE` to clear. |
-| `Teacher_Day_View` | Pick a day (**B3**) and optional class filter (**E3**) → all teachers × periods. Editable. |
+| `Teacher_Day_View` | Pick a day (**B3**) and optional class filter (**E3**) → all teachers × periods. FREE in green; DAY OFF in amber for teachers whose `Days Unavailable` includes that day. Editable. |
 | `Master_Grid_View` | Read-only overview of every class. |
-| `Teacher_Availability_Grid` | FREE / BUSY / UNAVAILABLE for one day (menu → 📊 Teacher Availability). |
 | `Cover_Manager` | Log of substitutions made with 👥 Cover Manager. |
 | `Change_Log` | One row per period changed from a view or `Master_Schedule`: time, editor, where, before, after. Created on the first edit. |
 
@@ -51,7 +54,7 @@ Colours: green = free, blue = class, red = clash (`Teacher_Day_View` also shows 
 3. `npx clasp push` (uploads the `.gs` / `.html` files listed in the project; local tooling is excluded by `.claspignore`).
 4. Open the sheet, reload it, then run **Timetable System → ⚙️ Setup / Repair**.
    Approve the permissions prompt (spreadsheet access, dialogs, and triggers — the last one installs the edit-sync trigger).
-5. Run **📥 Import Timetable**. If a saved snapshot exists you are asked which one to load.
+5. Run **📥 Import Timetable**. It always asks before replacing anything; if a saved snapshot exists you also choose which one to load.
 6. Run **✅ Check For Conflicts** and review the `Clash Status` column.
 
 ## Updating an existing sheet to this version
@@ -61,15 +64,18 @@ Colours: green = free, blue = class, red = clash (`Teacher_Day_View` also shows 
    after rows are deleted). Approve the new permission prompt: this version also reads the editor's email for `Change_Log`.
    If you previously added an `onEdit` trigger by hand, it is ignored from now on (you can delete it under Extensions → Apps Script → Triggers).
 3. **Keeping the data already in the sheet** (you have been editing it): stop here — do **not** run Import Timetable.
-   The new code reads the existing tabs as they are; Setup / Repair and Refresh only rewrite the header rows and the
-   two computed columns (`Total Hours Scheduled`, `Clash Status`). Run **🔄 Refresh All Views**, then go to step 4.
+   The new code reads the existing tabs as they are; Setup / Repair only fills in blank or missing header cells (it
+   never renames a column you added; it lists them in its message), and Refresh only writes the two computed columns
+   (`Total Hours Scheduled`, `Clash Status`). Run **🔄 Refresh All Views**, then go to step 4.
    *Only to replace the data with the 2026-27 Excel*: **📥 Import Timetable** → answer **NO** to load the new 2026-27 timetable
    (**YES** reloads your old saved snapshot). This replaces the Teachers, Classes, Subjects and Master_Schedule tabs —
-   use **💾 Save Snapshot** first if you want to keep a copy of the current state.
+   use **💾 Save Snapshot** first if you want to keep a copy of the current state. Columns you added to the right
+   of the timetable columns are left alone (a snapshot restore puts every row back in its place, so they still line up).
    The new timetable has 28 classes: 6th E is gone, and 11th C / 12th C are single classes whose medium groups are
    split periods, so old `11th C (H)` / `(E)` rows are replaced.
 4. **✅ Check For Conflicts**. Rows you added by hand for a period that already had a row are now flagged
-   *Duplicate Period*; editing that period in `Class_View` merges them into one row.
+   *Duplicate Period*. `Class_View` will not save that period until the extra row is deleted or fixed in
+   `Master_Schedule` (saving would have to merge the rows and drop one row's room and notes).
 
 ## Day-to-day use
 
@@ -86,17 +92,29 @@ Colours: green = free, blue = class, red = clash (`Teacher_Day_View` also shows 
   Two teachers sharing one group still need typing: `Bina + Chetan`. Teacher dropdowns list names A→Z.
 - **Teacher_View / Teacher_Day_View**: typing `6th A - Science` makes that teacher take the period; whoever taught it
   is replaced and a "Saved" message names them. On a split period, type one of its subjects to take that group.
-  Co-teachers and new split groups are set up in `Class_View`.
+  Co-teachers and new split groups are set up in `Class_View`. `FREE` on a split period keeps the group with `-` as
+  its teacher ("… group now has no teacher"), so the replacement can take it with `Class - Subject`.
 - **What gets refused** (in `Class_View` and in single Subject / Teacher cells of `Master_Schedule`; a "Not saved"
   message explains why, and the old value is put back): an unknown teacher or class
   name, a teacher who already teaches another class at that time (a combined lecture — same subject, same grade —
-  is fine), subjects and teacher groups that don't line up, a teacher name typed in the subject row, and clearing
-  only the subject. Clear both cells to free a period.
+  is fine), subjects and teacher groups that don't line up, a teacher name typed in the subject row, clearing
+  only the subject, and one subject picked on a split period (type every group, e.g. `Sanskrit / Music`). Clear both
+  cells to free a period. A teacher booked on a day in `Days Unavailable` is saved with a warning.
+- **Pasting into one `Master_Schedule` Subject / Teacher cell**: Sheets does not tell the script what the cell held
+  before a paste (or that it was empty), so the pasted text is kept as it is and only checked; a problem shows as
+  "Check this cell" instead of "Not saved". Press Ctrl+Z to undo a wrong paste.
+- **Teacher_View moves** are refused when either period's subjects and teacher groups don't line up; fix that row first.
 - **Combined sections**: give each section's row the same subject and teacher; it shows as one combined lecture, not a clash.
   The cell note in `Class_View` says which group is shared with which sections.
 - **Teacher absent**: 👥 Cover Manager → pick the date (the timetable day is worked out for you) and the absent teacher →
   assign a free teacher per period. Teachers who are busy, marked unavailable that day, absent, or already covering are not offered.
-- **Teacher on leave for a weekday**: put the day in `Teachers → Days Unavailable` (e.g. `Monday, Friday`).
+  Each absent teacher of a split period gets their own cover; one cover teacher can take every section of a combined lecture.
+- **Teacher on leave for a weekday**: put the day in `Teachers → Days Unavailable` (`Monday, Friday`, `Mon & Fri`,
+  `Mon-Wed` all work; Check For Conflicts lists text it cannot read). Edits on the Teachers, Classes and Subjects tabs
+  refresh the views and dropdowns. Renaming a teacher there does not rename them in `Master_Schedule`; a message says
+  how many periods still use the old name.
+- **One person per view tab at a time**: the views are shared, so if two people use the same view tab, one person's
+  selection (B3) can change under the other's edit. The second person should use another view or `Master_Schedule`.
 
 ## See the timetable locally (no push)
 
@@ -179,10 +197,10 @@ formatting or Apps Script quotas — see "Manual checks" below.
 
 | Problem | Fix |
 |---|---|
-| Edits in a view don't reach `Master_Schedule` | An editor runs **⚙️ Setup / Repair** (the trigger runs under the account of whoever installed it last — re-run it if that person lost access). Extra `onEdit` triggers are harmless: only the last installed one does the work. |
+| Edits in a view don't reach `Master_Schedule`, or "⚠️ Sync not running" appears | An editor runs **⚙️ Setup / Repair** (the trigger runs under the account of whoever installed it last — re-run it if that person lost access). Extra `onEdit` triggers are harmless: only the last installed one does the work. |
 | A teacher is missing from `Teacher_Day_View` | The name in `Master_Schedule` doesn't match `Teachers`. **Check For Conflicts** lists it as *Unregistered Teacher*. |
 | "unknown class" toast after typing in `Teacher_View` | Use the exact class name, e.g. `6th A - Mathematics`. |
 | Import loaded old data | Import again and answer **NO** (built-in timetable). |
-| "Not saved — another timetable edit is still being processed" | Two edits overlapped. What you typed is still on screen but was not saved; re-enter it. The views are shared, so two people using the same view switch each other's selection (B3). |
+| "Not saved — another timetable edit is still being processed" | Two edits overlapped. What you typed is still on screen but was not saved; re-enter it. |
 | Ctrl+Z after a view edit | Undo only reverts the view cell, not `Master_Schedule`. Type the old value back instead; `Change_Log` shows what it was. |
 | Script times out on very large pastes | Paste into `Master_Schedule`, then **🔄 Refresh All Views**. |

@@ -191,14 +191,20 @@ const RAW_SUBJECT_ROWS = [
 
 // [Period, Start, End] — bell schedule (24-hour) shown in the view headers
 const RAW_PERIOD_ROWS = [
-  [1,"09:30","10:20"],
-  [2,"10:20","11:00"],
-  [3,"11:00","11:40"],
-  [4,"11:40","12:20"],
-  [5,"12:50","13:30"],
-  [6,"13:30","14:10"],
-  [7,"14:10","14:50"],
-  [8,"14:50","15:30"]
+  [1,"10:00","10:50"],
+  [2,"10:50","11:30"],
+  [3,"11:30","12:10"],
+  [4,"12:10","12:50"],
+  [5,"13:20","14:00"],
+  [6,"14:00","14:40"],
+  [7,"14:40","15:20"],
+  [8,"15:20","16:00"]
+];
+
+// [Name, Start, End, After period (0 = before period 1)] — breaks shown as their own view column
+const RAW_BREAK_ROWS = [
+  ["Prayer","09:10","10:00",0],
+  ["Lunch","12:50","13:20",4]
 ];
 
 // One row per class / day / period. Split periods: "Hindi / IT" ↔ "Teacher A / Teacher B"
